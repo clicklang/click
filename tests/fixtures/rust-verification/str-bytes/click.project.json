@@ -1,0 +1,22 @@
+{
+  "units": {
+    "str_bytes": {
+      "language": "rust",
+      "sources": {
+        "bytes.rs": {}
+      },
+      "crate": {
+        "name": "str_bytes",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "str_bytes::byte_count",
+          "str_bytes::first_byte"
+        ],
+        "files": [
+          "bytes.rs"
+        ]
+      }
+    }
+  }
+}

@@ -654,6 +654,15 @@ fn slice_element(element: &Type) -> Result<crate::kernel::SliceElement, String> 
         .ok_or_else(|| "a slice's element must be a scalar".into())
 }
 
+/// The kernel type of a Rust value: a slice's wide pointer type, or a
+/// scalar's type.
+fn value_program_type(t: &Type) -> Result<ProgramType, String> {
+    match slice_program_type(t)? {
+        Some(slice) => Ok(slice),
+        None => Ok(scalar_type(t)?.to_kernel_type()),
+    }
+}
+
 /// The slice type of a slice-typed Rust local or parameter: `&[T]` and
 /// `&mut [T]` of a scalar `T`, one wide pointer
 /// (`design/rust-slice-values.md`, step 3b).
@@ -1008,6 +1017,9 @@ fn lower_function(
                 | Type::Vec { .. }
                 | Type::Box { .. }
                 | Type::OptionBox { .. }
+                | Type::ByteSlice { .. }
+                | Type::ScalarSlice { .. }
+                | Type::StrSlice
         ))
     {
         return Err("Rust reference/aggregate returns are not supported".into());
@@ -1019,8 +1031,12 @@ fn lower_function(
         )),
         _ => None,
     };
+    // A slice result is one wide value, as a slice parameter is
+    // (`design/rust-slice-values.md`, step 3c).
     let return_type = if return_layout.is_some() {
         InterfaceType::UInt8Pointer
+    } else if let Some(ProgramType::SlicePointer(slice)) = slice_program_type(&f.return_type)? {
+        InterfaceType::Slice(slice)
     } else {
         scalar_type(&f.return_type)?
     };
@@ -1224,7 +1240,9 @@ fn lower_function(
                 .filter_map(|(ordinal, local)| {
                     let id = if local.name == mir.return_place {
                         let id = LocalBindingId::return_place(owner.clone());
-                        if let Ok(value_type) = scalar_type(&local.value_type) {
+                        if let Ok(Some(slice)) = slice_program_type(&local.value_type) {
+                            id.initialize_program_type(slice);
+                        } else if let Ok(value_type) = scalar_type(&local.value_type) {
                             id.initialize_program_type(value_type.to_kernel_type());
                         }
                         id
@@ -1896,6 +1914,33 @@ impl Context<'_> {
                 program_typed_store(address, value, value_type),
             ));
         }
+        // A slice a call returns is one wide value, assigned as it is, and
+        // so is its reborrow; a body reads a returned `&str` as its bytes.
+        let e = match e {
+            E::Borrow { place, value_type }
+                if matches!(place.as_ref(), E::CallResult { .. })
+                    && slice_program_type(value_type)?.is_some() =>
+            {
+                place.as_ref()
+            }
+            e => e,
+        };
+        if let E::CallResult { function, .. } = e
+            && (self.slices.contains_key(name) || self.shared_scalar_slices.contains_key(name))
+        {
+            let value = self.expr(e)?;
+            let string = matches!(function, MirCallee::Direct(callee)
+                if self.functions.get(callee.as_str()).map(|f| &f.return_type)
+                    == Some(&Type::StrSlice));
+            return Ok(program_assign(
+                self.binding(name)?,
+                if string {
+                    crate::kernel::program_expression::cast(value, BYTE_SLICE)
+                } else {
+                    value
+                },
+            ));
+        }
         if let Some(expected) = self.shared_scalar_slices.get(name).copied() {
             let (pointer, source_length, element) = self.indexed_parts(e)?;
             if element != expected {
@@ -2040,6 +2085,13 @@ impl Context<'_> {
             // A slice argument is one wide value, built from the data
             // pointer and count the argument reads, each captured where its
             // own work ends (`design/rust-slice-values.md`, step 3b).
+            if let E::CallResult { .. } = argument
+                && slice_program_type(&value_type)?.is_some()
+            {
+                let (checks, value) = self.slice_operand(argument, &value_type)?;
+                pieces.push((checks, vec![value], None));
+                continue;
+            }
             if let Type::ByteSlice { .. } | Type::StrSlice = value_type {
                 let mutable = value_type == (Type::ByteSlice { mutable: true });
                 let (pointer, length) = self.slice_parts(argument)?;
@@ -2261,7 +2313,7 @@ impl Context<'_> {
                     .clone();
                 let (prefix, arguments) = self.prepared_arguments(function, arguments)?;
                 let (mut call, result) = self.call_value(function, arguments);
-                let value_type = scalar_type(&return_type)?.to_kernel_type();
+                let value_type = value_program_type(&return_type)?;
                 let ProgramStatement::CallResult {
                     result_type,
                     result_pointee_constant,
@@ -2464,6 +2516,52 @@ impl Context<'_> {
         }
         Ok(slice_components(
             crate::kernel::program_expression::variable(self.binding(name)?),
+        ))
+    }
+    /// The one wide value the slice expression `e` gives at the slice type
+    /// `value_type`, with the checks reading it owes: a call's slice result
+    /// as the call returned it, any other slice built from the data pointer
+    /// and count it reads (`design/rust-slice-values.md`, step 3c). A body
+    /// reads a `&str` as its bytes, so a string slice is cast to `str`.
+    pub(super) fn slice_operand(
+        &mut self,
+        e: &E,
+        value_type: &Type,
+    ) -> Result<(ProgramStatement, ProgramExpression), String> {
+        let slice_type =
+            slice_program_type(value_type)?.ok_or("a slice operand has a slice type")?;
+        let (checks, value) = match (e, value_type) {
+            (E::CallResult { .. }, _) => (program_skip(), self.expr(e)?),
+            (_, Type::ScalarSlice { element, .. }) => {
+                let (pointer, length, actual) = self.indexed_parts(e)?;
+                if actual != scalar_type(element)?.to_kernel_type() {
+                    return Err("Rust scalar slice element mismatch".into());
+                }
+                (
+                    program_skip(),
+                    ProgramExpression::SliceFromRawParts {
+                        data: Box::new(pointer),
+                        count: Box::new(length),
+                    },
+                )
+            }
+            _ => {
+                let checks = self.chunk_slice_checks(e)?;
+                let constant = value_type != &(Type::ByteSlice { mutable: true });
+                let (pointer, length) = self.slice_parts(e)?;
+                (
+                    checks,
+                    slice_value(pointer, ProgramType::UInt8Pointer, length, constant),
+                )
+            }
+        };
+        Ok((
+            checks,
+            if *value_type == Type::StrSlice {
+                crate::kernel::program_expression::cast(value, slice_type)
+            } else {
+                value
+            },
         ))
     }
     fn array_source_is_constant(&self, e: &E) -> Result<bool, String> {

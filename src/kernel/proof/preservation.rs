@@ -2,6 +2,7 @@
 //! No history, read reconstruction, or premise discovery belongs here.
 use crate::kernel::eval::typed_reads::{self, ReadType};
 use crate::kernel::prelude::*;
+use crate::kernel::{IntegerComparisonOperator, KernelTerm, KernelTermImport, StoredConditionTerm};
 
 pub(crate) fn apply(
     separation: &Proposition,
@@ -100,70 +101,56 @@ fn preserve_viewability(
 // The written result selects only the observation's type. Its endpoints are
 // never used to manufacture the primitive's conclusion.
 fn read_type(result: &Proposition) -> Option<ReadType> {
-    match result {
-        Proposition::ConditionIs(_, true)
-            if matches!(
-                result.old_condition(),
-                Some((OldConditionTerm::BoolEqual(..), true))
-            ) =>
-        {
-            Some(ReadType::Boolean)
+    use crate::kernel::{BooleanOperandView, IntegerComparisonOperator, KernelTermNode};
+    let Proposition::ConditionIs(condition, true) = result else {
+        return None;
+    };
+    let view = condition.operand_view();
+    if view.equality().is_some() {
+        return Some(ReadType::Boolean);
+    }
+    if view.pointer_addresses().is_some() {
+        return Some(ReadType::IntegerAddress);
+    }
+    if let Some([left, right]) = view.pointer_values() {
+        let ty = left.node().program_type;
+        return (ty == right.node().program_type).then_some(ReadType::Pointer(ty));
+    }
+    if let Some((format, relation, _)) = view.comparison() {
+        return (relation == CompareRelation::Equal
+            && !matches!(
+                format,
+                MachineIntegerType::Int128 | MachineIntegerType::UInt128
+            ))
+        .then_some(ReadType::Integer(format));
+    }
+    if let Some((IntegerComparisonOperator::Equal, operands)) =
+        crate::kernel::machine_integer::comparison::written_integer_comparison(view)
+    {
+        let [left, right] = operands
+            .each_ref()
+            .map(|operand| match operand.root().node() {
+                KernelTermNode::MachineObservation { format, .. } => Some(*format),
+                _ => None,
+            });
+        let format = left?;
+        return (right == Some(format)
+            && matches!(
+                format,
+                MachineIntegerType::Int128 | MachineIntegerType::UInt128
+            ))
+        .then_some(ReadType::Integer(format));
+    }
+    match view {
+        BooleanOperandView::Native(OldConditionTerm::AlgebraicEqual(a, b)) => {
+            (a.algebraic_type == b.algebraic_type).then_some(ReadType::Abstract)
         }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::AlgebraicEqual(a, b), _)) =
-                condition_source_0.old_condition()
-                && (a.algebraic_type == b.algebraic_type) =>
-        {
-            Some(ReadType::Abstract)
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::AddressEqual(..), _)) =
-                condition_source_0.old_condition() =>
-        {
-            Some(ReadType::IntegerAddress)
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::PointerEqual(a, b), _)) =
-                condition_source_0.old_condition()
-                && (a.program_type() == b.program_type()) =>
-        {
-            Some(ReadType::Pointer(a.program_type()))
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::IntegerEqual(a, b), _)) =
-                condition_source_0.old_condition()
-                && let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (&**a, &**b)
-                && a.ty() == b.ty()
-                && matches!(
-                    a.ty(),
-                    MachineIntegerType::Int128 | MachineIntegerType::UInt128
-                ) =>
-        {
-            Some(ReadType::Integer(a.ty()))
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((
-                OldConditionTerm::Compare {
-                    format,
-                    relation: CompareRelation::Equal,
-                    ..
-                },
-                _,
-            )) = condition_source_0.old_condition()
-                && (matches!(
-                    format,
-                    MachineIntegerType::Int8
-                        | MachineIntegerType::UInt8
-                        | MachineIntegerType::Int16
-                        | MachineIntegerType::UInt16
-                        | MachineIntegerType::Int32
-                        | MachineIntegerType::UInt32
-                        | MachineIntegerType::Int64
-                        | MachineIntegerType::UInt64
-                )) =>
-        {
-            Some(ReadType::Integer(*format))
-        }
+        BooleanOperandView::Shared(root) => match root.node() {
+            KernelTermNode::AlgebraicEqual { arguments: [a, b] } => {
+                (a.ty() == b.ty()).then_some(ReadType::Abstract)
+            }
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -276,6 +263,17 @@ fn preserve_field(
     crate::instrumentation::record_deterministic_work(2);
     let before = footprint.before_resources.owned_instance(field.identity)?;
     let after = footprint.after_resources.owned_instance(field.identity)?;
+    if let Some(a) = after.fields().integer_term(field.index) {
+        let b = before.fields().integer_term(field.index)?;
+        return Some(Proposition::condition_is(
+            StoredConditionTerm::integer_comparison(
+                IntegerComparisonOperator::Equal,
+                a.into_shared(),
+                b.into_shared(),
+            ),
+            true,
+        ));
+    }
     let a = after.fields().get(field.index)?;
     let b = before.fields().get(field.index)?;
     let condition = match (a, b) {
@@ -289,23 +287,17 @@ fn preserve_field(
             ));
         }
         (
-            crate::kernel::ResourceFieldValue::Integer(a),
-            crate::kernel::ResourceFieldValue::Integer(b),
-        ) => OldConditionTerm::integer_equal(a.clone(), b.clone()),
-        (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(b)),
-        ) if a.algebraic_type == b.algebraic_type => {
-            OldConditionTerm::AlgebraicEqual(a.clone(), b.clone())
-        }
+        ) if a.algebraic_type == b.algebraic_type => algebraic_equality(a, b),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
-        ) => OldConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
+        ) => StoredConditionTerm::logical_pointer_equal(a, b),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(b)),
-        ) => OldConditionTerm::equal(a.clone(), b.clone()),
+        ) => integer_equality(MachineIntegerType::Int32, a.clone(), b.clone())?,
         // An 8-bit field value is native: its equality is at its own format.
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt8(a)),
@@ -314,7 +306,7 @@ fn preserve_field(
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(b)),
-        ) => OldConditionTerm::uint32_equal(a.clone(), b.clone()),
+        ) => integer_equality(MachineIntegerType::UInt32, a.clone(), b.clone())?,
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(b)),
@@ -334,10 +326,10 @@ fn preserve_field(
 fn observation_type(comparison: ReadType, bytes: u32, result: &Proposition) -> Option<ReadType> {
     match (comparison, bytes) {
         (ReadType::Integer(MachineIntegerType::Int32), 1 | 2) => {
-            let (OldConditionTerm::Compare { left, right, .. }, true) = result.old_condition()?
-            else {
+            let Proposition::ConditionIs(condition, true) = result else {
                 return None;
             };
+            let (_, _, [left, right]) = condition.operand_view().comparison()?;
             let (left, _) = left.narrow_widening32_operand()?;
             let (right, _) = right.narrow_widening32_operand()?;
             (left == right && left.program_type().byte_width() == bytes)
@@ -361,30 +353,37 @@ fn observation_equality(
         (kind, comparison)
         && narrow != MachineIntegerType::Int32
     {
-        let widen =
-            |value| OldMachineTerm::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
+        let comparison = MachineIntegerType::Int32;
+        let mut import = KernelTermImport::for_exact_field_inputs();
+        let operands = [integer_bits(after)?, integer_bits(before)?].map(|word| {
+            import
+                .machine(narrow, &word)
+                .promote_narrow_to_int32(narrow)
+        });
         return Some(Proposition::condition_is(
-            OldConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
+            stored_word_equality(comparison, operands),
             true,
         ));
     }
     let condition = match (kind, after, before) {
         (ReadType::Boolean, ProgramValue::Bool(a), ProgramValue::Bool(b)) => {
-            OldConditionTerm::bool_equal(
-                OldConditionTerm::truth_of_bool_word(&a),
-                OldConditionTerm::truth_of_bool_word(&b),
-            )
+            let mut import = KernelTermImport::for_exact_field_inputs();
+            let root = KernelTerm::boolean_equal([
+                import.truth_of_bool_word(&a),
+                import.truth_of_bool_word(&b),
+            ]);
+            StoredConditionTerm::from_root(root).expect("Boolean equality")
         }
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            OldConditionTerm::logical_pointer_equal(a, b)
+            StoredConditionTerm::logical_pointer_equal(&a, &b)
         }
         (ReadType::IntegerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            OldConditionTerm::address_equal(a.address().clone(), b.address().clone())
+            StoredConditionTerm::address_equal(a.address(), b.address())
         }
         (ReadType::Abstract, ProgramValue::Parameter(a), ProgramValue::Parameter(b))
             if a.algebraic_type == b.algebraic_type =>
         {
-            OldConditionTerm::AlgebraicEqual(a, b)
+            algebraic_equality(&a, &b)
         }
         (ReadType::Integer(format), a, b) => {
             integer_equality(format, integer_bits(a)?, integer_bits(b)?)?
@@ -392,6 +391,12 @@ fn observation_equality(
         _ => return None,
     };
     Some(Proposition::condition_is(condition, true))
+}
+
+fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> StoredConditionTerm {
+    let mut import = KernelTermImport::for_exact_field_inputs();
+    let root = KernelTerm::algebraic_equal_raw([import.algebraic(left), import.algebraic(right)]);
+    StoredConditionTerm::from_root(root).expect("algebraic equality")
 }
 
 fn integer_bits(value: ProgramValue) -> Option<OldMachineTerm> {
@@ -410,36 +415,45 @@ fn integer_bits(value: ProgramValue) -> Option<OldMachineTerm> {
     }
 }
 
+fn stored_word_equality(
+    format: MachineIntegerType,
+    operands: [KernelTerm; 2],
+) -> StoredConditionTerm {
+    let root = KernelTerm::boolean_comparison(format, CompareRelation::Equal, operands);
+    StoredConditionTerm::from_root(root).expect("machine word equality")
+}
+
 fn integer_equality(
     format: MachineIntegerType,
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> Option<OldConditionTerm> {
+) -> Option<StoredConditionTerm> {
     Some(match format {
         MachineIntegerType::Int8
         | MachineIntegerType::UInt8
         | MachineIntegerType::Int16
-        | MachineIntegerType::UInt16 => {
-            OldConditionTerm::machine_compare(format, CompareRelation::Equal, left, right)
-        }
-        MachineIntegerType::Int32 => OldConditionTerm::equal(left, right),
-        MachineIntegerType::UInt32 => OldConditionTerm::uint32_equal(left, right),
-        MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
-            // The produced equality must have the same shape as its logical
-            // goal, including reflexive variables and closed literal operands.
-            crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+        | MachineIntegerType::UInt16
+        | MachineIntegerType::Int32
+        | MachineIntegerType::UInt32 => {
+            let mut import = KernelTermImport::for_exact_field_inputs();
+            stored_word_equality(
                 format,
-                CompareRelation::Equal,
                 [
-                    MachineOperandView::Old(&left),
-                    MachineOperandView::Old(&right),
+                    import.machine(format, &left),
+                    import.machine(format, &right),
                 ],
             )
         }
+        MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
+            // The produced equality must have the same shape as its logical
+            // goal, including reflexive variables and closed literal operands.
+            StoredConditionTerm::logical_word64_equality(format, left, right, false)
+        }
         MachineIntegerType::Int128 | MachineIntegerType::UInt128 => {
-            OldConditionTerm::integer_equal(
-                IntegerTerm::from_machine(format, left)?,
-                IntegerTerm::from_machine(format, right)?,
+            StoredConditionTerm::integer_comparison(
+                IntegerComparisonOperator::Equal,
+                IntegerTerm::from_machine(format, left)?.into(),
+                IntegerTerm::from_machine(format, right)?.into(),
             )
         }
     })
@@ -448,6 +462,76 @@ fn integer_equality(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preserved_wide_integer_equalities_keep_the_observation_format() {
+        use crate::kernel::{IntegerComparisonOperator, KernelTermNode, MachineIntegerConstant};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
+            let word = OldMachineTerm::Variable(Variable(983424));
+            let symbolic = integer_equality(format, word.clone(), word.clone()).unwrap();
+            let root = symbolic.root().unwrap();
+            assert!(!root.has_cached_native_argument());
+            let KernelTermNode::IntegerCompare {
+                operator: IntegerComparisonOperator::Equal,
+                arguments,
+            } = root.node()
+            else {
+                panic!("expected structural Integer equality");
+            };
+            assert_eq!(arguments[0], arguments[1]);
+            assert!(
+                matches!(arguments[0].node(), KernelTermNode::MachineObservation { format: ty, .. } if *ty == format)
+            );
+            let literal = |bits| {
+                OldMachineTerm::machine_constant(
+                    MachineIntegerConstant::from_bits(format.format(), bits).unwrap(),
+                )
+            };
+            for (right, expected) in [(1u128 << 127, true), (0, false)] {
+                let folded =
+                    integer_equality(format, literal(1u128 << 127), literal(right)).unwrap();
+                assert_eq!(folded.operand_view().constant(), Some(expected));
+            }
+            assert!(integer_equality(format, word, OldMachineTerm::constant(0)).is_none());
+        }
+    }
+
+    #[test]
+    fn promoted_preservation_reads_exact_widenings_without_exporting_the_goal() {
+        use MachineIntegerType as T;
+        let _session = crate::kernel::VerificationSession::enter();
+        let widen = |source, variable| {
+            OldMachineTerm::machine_integer_cast(
+                source,
+                T::Int32,
+                OldMachineTerm::Variable(variable),
+            )
+        };
+        for (right_type, expected) in [
+            (T::UInt8, Some(ReadType::Integer(T::UInt8))),
+            (T::Int8, None),
+        ] {
+            let written = OldConditionTerm::equal(
+                widen(T::UInt8, Variable(983411)),
+                widen(right_type, Variable(983412)),
+            );
+            let root = KernelTermImport::default().condition(&written);
+            let stored = StoredConditionTerm::from_root(root.clone()).unwrap();
+            for condition in [StoredConditionTerm::from(written), stored] {
+                let goal = Proposition::condition_is(condition.clone(), true);
+                let comparison = read_type(&goal).unwrap();
+                assert_eq!(comparison, ReadType::Integer(T::Int32));
+                assert_eq!(observation_type(comparison, 1, &goal), expected);
+                assert_eq!(observation_type(comparison, 2, &goal), None);
+                assert_eq!(
+                    read_type(&Proposition::condition_is(condition, false)),
+                    None
+                );
+            }
+            assert!(!root.has_cached_native_argument());
+        }
+    }
 
     #[test]
     fn return_preservation_refuses_a_view_of_the_retired_local() {
@@ -973,6 +1057,49 @@ mod tests {
     }
 
     #[test]
+    fn boolean_preservation_compares_the_truth_of_each_recorded_word() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let _reads = typed_reads::ReadScope::enter();
+        let (preservation, _) = fixture(0, false);
+        let Proposition::ResourceSeparate { left, .. } = &preservation.separation else {
+            unreachable!()
+        };
+        let Resource::Footprint(footprint) = left.as_ref() else {
+            unreachable!()
+        };
+        let address = Address::symbolic(Variable(983421));
+        let word = OldMachineTerm::Variable(Variable(983422));
+        let cast = OldMachineTerm::bool_cast(
+            MachineIntegerType::UInt8,
+            OldConditionTerm::Variable(Variable(983423)),
+        );
+        for before in [cast, word.clone()] {
+            typed_reads::record_at(
+                &footprint.before_point,
+                &address,
+                &ProgramValue::Bool(before.clone()),
+            );
+            typed_reads::record_at(
+                &footprint.after_point,
+                &address,
+                &ProgramValue::Bool(word.clone()),
+            );
+            let kind = ReadType::Boolean;
+            let Some(Proposition::ConditionIs(condition, true)) =
+                observation_equality(footprint, address.clone(), kind, kind)
+            else {
+                panic!("expected Boolean observation equality");
+            };
+            let expected = OldConditionTerm::bool_equal(
+                OldConditionTerm::truth_of_bool_word(&word),
+                OldConditionTerm::truth_of_bool_word(&before),
+            );
+            assert_eq!(condition, StoredConditionTerm::from(expected));
+            assert!(!condition.root().unwrap().has_cached_native_argument());
+        }
+    }
+
+    #[test]
     fn abstract_memory_preservation_uses_recorded_typed_values() {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
@@ -1266,6 +1393,15 @@ mod tests {
         let observed = observation_type(comparison_type, bytes, &expected).unwrap();
         let observed_format = if bytes == 8 { comparison } else { format };
         assert_eq!(observed, ReadType::Integer(observed_format));
+        if bytes <= 8 {
+            let derived =
+                observation_equality(&footprint, slot.clone(), observed, comparison_type).unwrap();
+            let Proposition::ConditionIs(stored, true) = &derived else {
+                panic!("expected stored word equality");
+            };
+            assert!(!stored.root().unwrap().has_cached_native_argument());
+            assert_eq!(derived, expected);
+        }
         let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Footprint(footprint)),
             right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(

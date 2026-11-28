@@ -230,6 +230,13 @@ impl StoredIntegerTerm {
             StoredInteger::Shared(root) => Some(root),
         }
     }
+    pub(crate) fn into_shared(self) -> SharedIntegerTerm {
+        match self.0 {
+            StoredInteger::Shared(root) => SharedIntegerTerm::from_root(root),
+            StoredInteger::Input(value) => Arc::unwrap_or_clone(value).into(),
+        }
+    }
+
     fn exact_key(&self) -> super::integer::IntegerShallowKey {
         self.root()
             .and_then(KernelTerm::integer_exact_key)
@@ -351,7 +358,227 @@ impl From<OldConditionTerm> for StoredConditionTerm {
         Self(StoredCondition::Shared(root))
     }
 }
+/// Exact operands of a stored pointer-domain equality, in written order.
+pub(crate) enum PointerEquality<'a> {
+    Address(&'a [SharedAddress; 2]),
+    Offset(&'a [SharedAddressOffset; 2]),
+    Pointer(&'a [SharedPointer; 2]),
+}
+
+// A borrowed lookup in the existing native fact map. Both the stored key
+// and the query hash and compare through OldConditionTerm's written identity.
+trait BorrowedConditionKey {
+    fn written_identity(&self) -> ConditionIdentity<'_>;
+}
+impl BorrowedConditionKey for OldConditionTerm {
+    fn written_identity(&self) -> ConditionIdentity<'_> {
+        self.identity()
+    }
+}
+impl BorrowedConditionKey for ConditionIdentity<'_> {
+    fn written_identity(&self) -> ConditionIdentity<'_> {
+        *self
+    }
+}
+impl PartialEq for dyn BorrowedConditionKey + '_ {
+    fn eq(&self, other: &Self) -> bool {
+        self.written_identity() == other.written_identity()
+    }
+}
+impl Eq for dyn BorrowedConditionKey + '_ {}
+impl PartialOrd for dyn BorrowedConditionKey + '_ {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for dyn BorrowedConditionKey + '_ {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.written_identity().cmp(&other.written_identity())
+    }
+}
+impl std::hash::Hash for dyn BorrowedConditionKey + '_ {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.written_identity().hash(state);
+    }
+}
+impl<'a> std::borrow::Borrow<dyn BorrowedConditionKey + 'a> for OldConditionTerm {
+    fn borrow(&self) -> &(dyn BorrowedConditionKey + 'a) {
+        self
+    }
+}
+
+impl crate::kernel::fact_collections::FactMap<OldConditionTerm, bool> {
+    pub(in crate::kernel) fn written_overflow_value(
+        &self,
+        format: MachineIntegerType,
+        op: OverflowOperation,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
+    ) -> Option<bool> {
+        self.get(&ConditionIdentity::Overflows {
+            format,
+            op,
+            left,
+            right,
+        } as &dyn BorrowedConditionKey)
+            .copied()
+    }
+}
+
+/// Borrowed operands at interfaces shared with written condition producers.
+#[derive(Clone, Copy)]
+pub(crate) enum WrittenPointerEquality<'a> {
+    Address([&'a Address; 2]),
+    Offset([&'a AddressOffset; 2]),
+    Pointer([&'a Pointer; 2]),
+}
+
+impl<'a> WrittenPointerEquality<'a> {
+    pub(crate) fn from_condition(value: &'a OldConditionTerm) -> Option<Self> {
+        match value {
+            OldConditionTerm::AddressEqual(a, b) => Some(Self::Address([a, b])),
+            OldConditionTerm::AddressOffsetEqual(a, b) => Some(Self::Offset([a, b])),
+            OldConditionTerm::PointerEqual(a, b) => Some(Self::Pointer([a, b])),
+            _ => None,
+        }
+    }
+    fn identity(self) -> ConditionIdentity<'a> {
+        match self {
+            Self::Address([a, b]) => ConditionIdentity::AddressEqual(a, b),
+            Self::Offset([a, b]) => ConditionIdentity::AddressOffsetEqual(a, b),
+            Self::Pointer([a, b]) => ConditionIdentity::PointerEqual(a, b),
+        }
+    }
+    pub(crate) fn cited_value(
+        self,
+        facts: &std::collections::HashMap<OldConditionTerm, bool>,
+    ) -> Option<bool> {
+        let lookup = |pair: Self| {
+            facts
+                .get(&pair.identity() as &dyn BorrowedConditionKey)
+                .copied()
+        };
+        lookup(self).or_else(|| {
+            lookup(match self {
+                Self::Address([a, b]) => Self::Address([b, a]),
+                Self::Offset([a, b]) => Self::Offset([b, a]),
+                Self::Pointer([a, b]) => Self::Pointer([b, a]),
+            })
+        })
+    }
+}
+
+impl PointerEquality<'_> {
+    pub(crate) fn with_written<R>(&self, read: impl FnOnce(WrittenPointerEquality<'_>) -> R) -> R {
+        match self {
+            Self::Address(pair) => read(WrittenPointerEquality::Address(
+                pair.each_ref()
+                    .map(|a| a.written().expect("written address")),
+            )),
+            Self::Offset(pair) => {
+                read(WrittenPointerEquality::Offset(pair.each_ref().map(|a| {
+                    AddressOffset::try_from_ref(a).expect("written offset")
+                })))
+            }
+            Self::Pointer(pair) => {
+                let written = pair
+                    .each_ref()
+                    .map(|p| p.export().expect("written pointer"));
+                read(WrittenPointerEquality::Pointer(written.each_ref()))
+            }
+        }
+    }
+    pub(crate) fn matches_condition(&self, from: &OldConditionTerm) -> bool {
+        WrittenPointerEquality::from_condition(from)
+            .is_some_and(|from| self.with_written(|pair| pair.identity() == from.identity()))
+    }
+    pub(crate) fn is_reflexive(&self) -> bool {
+        match self {
+            Self::Address([a, b]) => a.syntax_equal(b),
+            Self::Offset([a, b]) => a.syntax_equal(b),
+            Self::Pointer([a, b]) => a.condition_syntax_equal(b),
+        }
+    }
+
+    pub(crate) fn mirrored(&self) -> StoredConditionTerm {
+        let root = match self {
+            Self::Address([a, b]) => KernelTerm::address_equal_raw([b.clone(), a.clone()]),
+            Self::Offset([a, b]) => KernelTerm::address_offset_equal_raw([b.clone(), a.clone()]),
+            Self::Pointer([a, b]) => KernelTerm::pointer_equal_raw([b.clone(), a.clone()]),
+        };
+        StoredConditionTerm(StoredCondition::Shared(root))
+    }
+}
 impl StoredConditionTerm {
+    pub(crate) fn pointer_equality(&self) -> Option<PointerEquality<'_>> {
+        match self.root()?.node() {
+            KernelTermNode::AddressEqual { arguments, .. } => {
+                Some(PointerEquality::Address(arguments))
+            }
+            KernelTermNode::AddressOffsetEqual { arguments } => {
+                Some(PointerEquality::Offset(arguments))
+            }
+            KernelTermNode::PointerEqual(pair) => Some(PointerEquality::Pointer(pair.arguments())),
+            _ => None,
+        }
+    }
+
+    /// Logical lowering keeps a reflexive thin, non-null pointer comparison
+    /// as written evidence. Both address operands carry the left declaration.
+    pub(crate) fn logical_pointer_equal(left: &Pointer, right: &Pointer) -> Self {
+        if left == right && !left.is_null() && !left.is_wide() {
+            let address = left.address().shared();
+            return Self(StoredCondition::Shared(KernelTerm::address_equal_raw([
+                address.clone(),
+                address.clone(),
+            ])));
+        }
+        Self::pointer_equal(left, right)
+    }
+
+    pub(crate) fn pointer_equal(left: &Pointer, right: &Pointer) -> Self {
+        let root = match left.equality_kind(right) {
+            PointerEqualityKind::Complete => {
+                KernelTerm::pointer_equal_raw([left.shared().clone(), right.shared().clone()])
+            }
+            PointerEqualityKind::Address => {
+                return Self::address_equal(left.address(), right.address());
+            }
+            PointerEqualityKind::IntegerAddress => KernelTermImport::for_exact_field_inputs()
+                .integer_address_equality(
+                    MachineIntegerType::Int64,
+                    [left.address().shared(), right.address().shared()],
+                ),
+        };
+        Self(StoredCondition::Shared(root))
+    }
+
+    /// Construct an address comparison from written operands, preserving the
+    /// producer's block payloads when the comparison stays symbolic.
+    pub(crate) fn address_equal(left: &Address, right: &Address) -> Self {
+        Self(StoredCondition::Shared(KernelTerm::address_equal_with(
+            [left.shared().clone(), right.shared().clone()],
+            SharedAddressOffset::written_constant,
+        )))
+    }
+
+    /// A signed count bound folds two literal words and keeps the written
+    /// direction for exact fact lookup otherwise.
+    pub(in crate::kernel) fn signed_int32_at_least(
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
+    ) -> Self {
+        let format = MachineIntegerType::Int32;
+        let mut import = KernelTermImport::for_exact_field_inputs();
+        let operands = [left, right].map(|operand| import.machine(format, operand));
+        Self::from_root(KernelTerm::boolean_comparison(
+            format,
+            CompareRelation::GreaterEqual,
+            operands,
+        ))
+        .expect("signed int32 comparison")
+    }
+
     pub(crate) fn constant(value: bool) -> Self {
         Self(StoredCondition::Shared(KernelTerm::boolean_literal(value)))
     }
@@ -569,22 +796,10 @@ impl std::fmt::Debug for StoredConditionTerm {
 impl StoredConditionTerm {
     /// The same ordering and hash as the written condition. Address comparisons
     /// already hold the operands that the identity borrows.
-    fn atomic_identity(&self) -> ConditionIdentity<'_> {
-        match self.root().map(KernelTerm::node) {
-            Some(KernelTermNode::AddressEqual {
-                arguments: [left, right],
-                ..
-            }) => ConditionIdentity::AddressEqual(
-                left.written().expect("written address"),
-                right.written().expect("written address"),
-            ),
-            Some(KernelTermNode::AddressOffsetEqual {
-                arguments: [left, right],
-            }) => ConditionIdentity::AddressOffsetEqual(
-                AddressOffset::try_from_ref(left).expect("written offset"),
-                AddressOffset::try_from_ref(right).expect("written offset"),
-            ),
-            _ => self.old_form().identity(),
+    fn with_atomic_identity<R>(&self, read: impl FnOnce(ConditionIdentity<'_>) -> R) -> R {
+        match self.pointer_equality() {
+            Some(pair) => pair.with_written(|written| read(written.identity())),
+            None => read(self.old_form().identity()),
         }
     }
 
@@ -637,7 +852,8 @@ impl Ord for StoredConditionTerm {
             // BoolIf and BoolEqual follow all atomic conditions in OldConditionTerm.
             (Some(_), None) => Ordering::Greater,
             (None, Some(_)) => Ordering::Less,
-            (None, None) => self.atomic_identity().cmp(&other.atomic_identity()),
+            (None, None) => self
+                .with_atomic_identity(|left| other.with_atomic_identity(|right| left.cmp(&right))),
         }
     }
 }
@@ -646,7 +862,7 @@ impl std::hash::Hash for StoredConditionTerm {
         if let Some(key) = self.connective_key() {
             key.hash(state);
         } else {
-            self.atomic_identity().hash(state);
+            self.with_atomic_identity(|value| value.hash(state));
         }
     }
 }

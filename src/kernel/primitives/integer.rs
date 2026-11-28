@@ -2008,6 +2008,20 @@ pub enum IntegerComparisonOperator {
     NotEqual,
 }
 
+impl IntegerComparisonOperator {
+    fn compare_literals(self, left: &BigInt, right: &BigInt) -> bool {
+        charge_binary_bits(left, right);
+        match self {
+            Self::LessThan => left < right,
+            Self::LessEqual => left <= right,
+            Self::GreaterThan => left > right,
+            Self::GreaterEqual => left >= right,
+            Self::Equal => left == right,
+            Self::NotEqual => left != right,
+        }
+    }
+}
+
 impl IntegerTerm {
     pub fn var(variable: Variable) -> Self {
         crate::instrumentation::record_deterministic_work(1);
@@ -2383,12 +2397,30 @@ fn fmt_integer_shared(
     fmt_integer_term(term.as_ref(), formatter, seen)
 }
 
+impl StoredConditionTerm {
+    pub(crate) fn integer_comparison(
+        operator: IntegerComparisonOperator,
+        left: SharedIntegerTerm,
+        right: SharedIntegerTerm,
+    ) -> Self {
+        let arguments = [left.0, right.0];
+        if let [
+            KernelTermNode::IntegerLiteral(a),
+            KernelTermNode::IntegerLiteral(b),
+        ] = arguments.each_ref().map(KernelTerm::node)
+        {
+            return Self::constant(operator.compare_literals(a, b));
+        }
+        let root = KernelTerm::integer_comparison(operator, arguments).expect("Integer operands");
+        Self::from_root(root).expect("Integer comparison")
+    }
+}
+
 impl OldConditionTerm {
     pub(crate) fn integer_less_than(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
-                charge_binary_bits(left, right);
-                Self::Constant(left < right)
+                Self::Constant(IntegerComparisonOperator::LessThan.compare_literals(left, right))
             }
             _ => Self::IntegerLessThan(left.into(), right.into()),
         }
@@ -2397,8 +2429,7 @@ impl OldConditionTerm {
     pub(crate) fn integer_less_equal(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
-                charge_binary_bits(left, right);
-                Self::Constant(left <= right)
+                Self::Constant(IntegerComparisonOperator::LessEqual.compare_literals(left, right))
             }
             _ => Self::IntegerLessEqual(left.into(), right.into()),
         }
@@ -2407,8 +2438,7 @@ impl OldConditionTerm {
     pub(crate) fn integer_greater_than(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
-                charge_binary_bits(left, right);
-                Self::Constant(left > right)
+                Self::Constant(IntegerComparisonOperator::GreaterThan.compare_literals(left, right))
             }
             _ => Self::IntegerGreaterThan(left.into(), right.into()),
         }
@@ -2416,10 +2446,9 @@ impl OldConditionTerm {
 
     pub(crate) fn integer_greater_equal(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
-            (Some(left), Some(right)) => {
-                charge_binary_bits(left, right);
-                Self::Constant(left >= right)
-            }
+            (Some(left), Some(right)) => Self::Constant(
+                IntegerComparisonOperator::GreaterEqual.compare_literals(left, right),
+            ),
             _ => Self::IntegerGreaterEqual(left.into(), right.into()),
         }
     }
@@ -2427,8 +2456,7 @@ impl OldConditionTerm {
     pub(crate) fn integer_equal(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
-                charge_binary_bits(left, right);
-                Self::Constant(left == right)
+                Self::Constant(IntegerComparisonOperator::Equal.compare_literals(left, right))
             }
             _ => Self::IntegerEqual(left.into(), right.into()),
         }
@@ -2437,8 +2465,7 @@ impl OldConditionTerm {
     pub(crate) fn integer_not_equal(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
-                charge_binary_bits(left, right);
-                Self::Constant(left != right)
+                Self::Constant(IntegerComparisonOperator::NotEqual.compare_literals(left, right))
             }
             _ => Self::IntegerNotEqual(left.into(), right.into()),
         }

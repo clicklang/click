@@ -4154,31 +4154,69 @@ impl<'a> TermRewrite<'a> {
                 {
                     return proposition.clone();
                 }
-                // Cited facts and exact Bool replacements use the whole written
-                // condition as a key before descending into its operands.
-                if self.conditions.is_none()
-                    && self.cited_conditions.is_none()
-                    && self.condition_exact.is_none()
-                    && let Some(KernelTermNode::PointerEqual(pair)) =
-                        condition.root().map(KernelTerm::node)
-                {
-                    if !self.source_variables_reserved {
-                        let mut variables = self.new_carrier_variables();
-                        collect_stored_condition_carriers(condition, &mut variables);
-                        self.reserve_source_variables(variables);
-                    }
-                    if !self.begin_condition_visit() {
+                if let Some(pair) = condition.pointer_equality() {
+                    if !self.begin_stored_condition_visit(condition) {
                         return exhausted_proposition();
                     }
-                    let [left, right] = pair.arguments();
-                    let [left, right] = self.rewrite_pointer_operands(
-                        left.export().expect("written pointer operand"),
-                        right.export().expect("written pointer operand"),
-                    );
-                    if self.checked_work_exhausted() {
-                        return exhausted_proposition();
+                    let facts = self.conditions.filter(|facts| !facts.is_empty());
+                    if (facts.is_some() || self.cited_conditions.is_some())
+                        && let Some(decided) = pair.with_written(|written| {
+                            facts
+                                .and_then(|facts| written.cited_value(facts))
+                                .or_else(|| {
+                                    let graph = self.cited_conditions?;
+                                    [true, false]
+                                        .into_iter()
+                                        .find(|truth| graph.knows_pointer_equation(written, *truth))
+                                })
+                        })
+                    {
+                        return Proposition::condition_is(
+                            StoredConditionTerm::constant(decided),
+                            *value,
+                        );
                     }
-                    return self.pointer_equality_claim(left, right, *value);
+                    if let Some((from, to)) = self.condition_exact
+                        && pair.matches_condition(from)
+                    {
+                        self.changed = true;
+                        return to.truth_claim(*value);
+                    }
+                    let root = match pair {
+                        PointerEquality::Pointer([left, right]) => {
+                            let [left, right] = self.rewrite_pointer_operands(
+                                left.export().expect("written pointer operand"),
+                                right.export().expect("written pointer operand"),
+                            );
+                            if self.checked_work_exhausted() {
+                                return exhausted_proposition();
+                            }
+                            self.reduced_pointer_comparison(left, right)
+                        }
+                        PointerEquality::Address(arguments) => {
+                            let addresses = arguments.each_ref().map(|address| {
+                                self.pointer(&address.export().expect("written address operand"))
+                                    .into_shared()
+                            });
+                            if self.checked_work_exhausted() {
+                                return exhausted_proposition();
+                            }
+                            // Written address equality keeps even a reflexive pair as evidence.
+                            KernelTerm::address_equal_raw(addresses)
+                        }
+                        PointerEquality::Offset(arguments) => {
+                            let offsets = arguments.each_ref().map(|offset| {
+                                let written = AddressOffset::try_from_ref(offset)
+                                    .expect("written offset operand");
+                                self.offset(written).into_shared()
+                            });
+                            if self.checked_work_exhausted() {
+                                return exhausted_proposition();
+                            }
+                            KernelTerm::address_offset_equal_raw(offsets)
+                        }
+                    };
+                    return self.pointer_comparison_claim(root, *value);
                 }
                 let condition = self.condition(condition.old_form());
                 if self.checked_work_exhausted() {
@@ -6509,6 +6547,15 @@ impl<'a> TermRewrite<'a> {
         [canonical(left), canonical(right)]
     }
 
+    fn begin_stored_condition_visit(&mut self, condition: &StoredConditionTerm) -> bool {
+        if !self.source_variables_reserved {
+            let mut variables = self.new_carrier_variables();
+            collect_stored_condition_carriers(condition, &mut variables);
+            self.reserve_source_variables(variables);
+        }
+        self.begin_condition_visit()
+    }
+
     fn begin_condition_visit(&mut self) -> bool {
         if self.checked_work_exhausted() {
             return false;
@@ -6741,33 +6788,20 @@ impl<'a> TermRewrite<'a> {
         self.finish_condition(result)
     }
 
-    fn pointer_equality_claim(
-        &mut self,
-        left: Pointer,
-        right: Pointer,
-        truth: bool,
-    ) -> Proposition {
-        let root = match left.equality_kind(&right) {
+    fn reduced_pointer_comparison(&mut self, left: Pointer, right: Pointer) -> KernelTerm {
+        match left.equality_kind(&right) {
             PointerEqualityKind::IntegerAddress => {
-                let reduced = OldConditionTerm::integer_address_equality(&left, &right);
-                return self.finish_condition(reduced).truth_claim(truth);
+                // Equality is filed at Int64 regardless of the word's signedness.
+                // Keep registered read names as written in this result.
+                KernelTermImport::for_exact_field_inputs().integer_address_equality(
+                    MachineIntegerType::Int64,
+                    [left.address().shared(), right.address().shared()],
+                )
             }
-            PointerEqualityKind::Address => {
-                let (a, b) = (left.address(), right.address());
-                let comparison =
-                    KernelTerm::address_equal([a.shared().clone(), b.shared().clone()]);
-                if matches!(comparison.node(), KernelTermNode::AddressEqual { .. })
-                    && (self.pointer_association_proven(
-                        (a.base == b.base).then_some((&a.offset, &b.offset)),
-                    ) || self
-                        .equality_graph
-                        .is_some_and(|graph| graph.are_equal(a, b)))
-                {
-                    KernelTerm::boolean_literal(true)
-                } else {
-                    comparison
-                }
-            }
+            PointerEqualityKind::Address => KernelTerm::address_equal([
+                left.address().shared().clone(),
+                right.address().shared().clone(),
+            ]),
             PointerEqualityKind::Complete => {
                 if self.pointer_association_proven(left.equality_offset_sides(&right))
                     || self.equality_graph.is_some_and(|graph| {
@@ -6779,6 +6813,55 @@ impl<'a> TermRewrite<'a> {
                     KernelTerm::pointer_equal_raw([left.into_shared(), right.into_shared()])
                 }
             }
+        }
+    }
+
+    fn pointer_comparison_claim(&mut self, root: KernelTerm, truth: bool) -> Proposition {
+        // The word constructor can itself reduce a comparison with zero to
+        // address equality. Apply the evidence rules to the resulting shape.
+        let proved = match root.node() {
+            KernelTermNode::AddressEqual { arguments, .. } => {
+                let [a, b] = arguments
+                    .each_ref()
+                    .map(|address| address.written().expect("rewritten address"));
+                self.pointer_association_proven(
+                    (a.base == b.base).then_some((&a.offset, &b.offset)),
+                ) || self
+                    .equality_graph
+                    .is_some_and(|graph| graph.are_equal(a, b))
+            }
+            KernelTermNode::AddressOffsetEqual { arguments } => {
+                let [a, b] = arguments
+                    .each_ref()
+                    .map(|offset| AddressOffset::try_from_ref(offset).expect("rewritten offset"));
+                self.pointer_association_proven(Some((a, b)))
+                    || self
+                        .equality_graph
+                        .is_some_and(|graph| graph.are_offsets_equal(a, b))
+            }
+            KernelTermNode::BoolCompare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                arguments,
+            } if self.collected_conditions.is_some()
+                || self.equality_graph.is_some()
+                || self.conditions.is_some_and(|facts| !facts.is_empty()) =>
+            {
+                let [a, b] = arguments.each_ref().map(|word| {
+                    KernelTermExport::condition_machine_operand(word)
+                        .expect("rewritten address word")
+                });
+                self.uint64_equality_from_order(&a, &b)
+                    || self
+                        .equality_graph
+                        .is_some_and(|graph| graph.are_uint64_equal(&a, &b))
+            }
+            _ => false,
+        };
+        let root = if proved {
+            KernelTerm::boolean_literal(true)
+        } else {
+            root
         };
         Proposition::condition_is(
             StoredConditionTerm::from_root(root).expect("pointer equality"),
@@ -6897,6 +6980,21 @@ impl<'a> TermRewrite<'a> {
         false
     }
 
+    fn uint64_equality_from_order(&mut self, a: &OldMachineTerm, b: &OldMachineTerm) -> bool {
+        if self.collected_conditions.is_none() && self.conditions.is_none_or(HashMap::is_empty) {
+            return false;
+        }
+        let le = OldConditionTerm::uint64_less_equal(a.clone(), b.clone());
+        let lt = OldConditionTerm::uint64_less_than(a.clone(), b.clone());
+        let proved = self.conditions.is_some_and(|conditions| {
+            conditions.get(&le) == Some(&true) && conditions.get(&lt) == Some(&false)
+        });
+        if let Some(conditions) = &mut self.collected_conditions {
+            conditions.extend([le, lt]);
+        }
+        proved
+    }
+
     fn finish_condition(&mut self, result: OldConditionTerm) -> OldConditionTerm {
         // Comparison forms are lookup aids, not stored syntax. Replacing a
         // read can expose a literal machine comparison; preserve the old
@@ -6928,17 +7026,9 @@ impl<'a> TermRewrite<'a> {
             left: a,
             right: b,
         } = &result
+            && self.uint64_equality_from_order(a, b)
         {
-            let le = OldConditionTerm::uint64_less_equal(a.as_ref().clone(), b.as_ref().clone());
-            let lt = OldConditionTerm::uint64_less_than(a.as_ref().clone(), b.as_ref().clone());
-            if let Some(conditions) = &mut self.collected_conditions {
-                conditions.extend([le.clone(), lt.clone()]);
-            }
-            if self.conditions.is_some_and(|conditions| {
-                conditions.get(&le) == Some(&true) && conditions.get(&lt) == Some(&false)
-            }) {
-                return OldConditionTerm::Constant(true);
-            }
+            return OldConditionTerm::Constant(true);
         }
         if let Some(guards) = result.uint64_index_order_guards() {
             if let Some(conditions) = &mut self.collected_conditions {
@@ -9064,6 +9154,80 @@ mod tests {
     }
 
     #[test]
+    fn pointer_integer_equality_retains_written_words_and_folds_constants() {
+        let _session = VerificationSession::enter();
+        let base = Address::symbolic(Variable(99833));
+        let read = crate::kernel::eval::load_variable_for_exact_cell(
+            &crate::kernel::intern_memory(SymbolicMemory::new()),
+            &base,
+            LoadKind::Bits64,
+            8,
+        );
+        let pointer = Pointer::new(base, ProgramType::Int32Pointer);
+        let cast = |word| {
+            pointer
+                .clone()
+                .with_address(Address::from_integer_address(word))
+        };
+        let left = cast(OldMachineTerm::Variable(read));
+        for (a, b) in [
+            (&left, &pointer),
+            (&left, &left),
+            (
+                &cast(OldMachineTerm::int64_constant(-1)),
+                &cast(OldMachineTerm::uint64_constant(u64::MAX)),
+            ),
+            (
+                &cast(OldMachineTerm::uint64_constant(5)),
+                &cast(OldMachineTerm::uint64_constant(6)),
+            ),
+        ] {
+            let written = OldConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone()));
+            let expected = TermRewrite::empty().condition(&written);
+            let source = KernelTerm::pointer_equal_raw([a.shared().clone(), b.shared().clone()]);
+            for truth in [false, true] {
+                let goal = Proposition::condition_is(
+                    StoredConditionTerm::from_root(source.clone()).unwrap(),
+                    truth,
+                );
+                let Proposition::ConditionIs(result, polarity) =
+                    TermRewrite::empty().proposition(&goal)
+                else {
+                    panic!("expected a condition claim")
+                };
+                assert_eq!(polarity, truth);
+                let root = result.root().expect("shared integer-address comparison");
+                assert!(!root.has_cached_native_argument());
+                assert_eq!(KernelTermExport::condition(root).unwrap(), expected);
+                assert!(!source.has_cached_native_argument());
+            }
+        }
+    }
+
+    #[test]
+    fn rewriting_stored_addresses_preserves_the_reflexive_comparison() {
+        let _session = VerificationSession::enter();
+        let [from, to] = [99837, 99838].map(|id| Address::symbolic(Variable(id)));
+        let root = KernelTerm::address_equal_raw([from.shared().clone(), to.shared().clone()]);
+        let source = StoredConditionTerm::from_root(root.clone()).unwrap();
+        for truth in [false, true] {
+            let goal = Proposition::condition_is(source.clone(), truth);
+            let mut rewrite = TermRewrite::for_pointer_exact(&from, &to);
+            let Proposition::ConditionIs(result, polarity) = rewrite.proposition(&goal) else {
+                panic!("expected the rewritten address equality");
+            };
+            assert!(rewrite.changed);
+            assert_eq!(polarity, truth);
+            assert_eq!(
+                result.operand_view().pointer_addresses().unwrap(),
+                [to.shared().clone(), to.shared().clone()]
+            );
+            assert!(!root.has_cached_native_argument());
+            assert!(!result.root().unwrap().has_cached_native_argument());
+        }
+    }
+
+    #[test]
     fn pointer_reduction_keeps_each_declarations_address() {
         let _session = VerificationSession::enter();
         let declarations = [
@@ -9109,6 +9273,78 @@ mod tests {
             assert_eq!(binding.spelling(), Some(name));
             assert_eq!(binding.program_type(), Some(ty));
         }
+    }
+
+    #[test]
+    fn stored_pointer_comparisons_consult_written_facts_before_rewriting() {
+        let _session = VerificationSession::enter();
+        let addresses = [99841, 99842].map(|id| Address::symbolic(Variable(id)));
+        let offsets = [99843, 99844].map(|id| AddressOffset::variable(Variable(id)));
+        let pointers = [3, 4].map(|count| {
+            Pointer::new(addresses[0].clone(), ProgramType::Int32Pointer)
+                .with_element_count(OldMachineTerm::uint64_constant(count))
+        });
+        for root in [
+            KernelTerm::address_equal_raw(addresses.each_ref().map(|a| a.shared().clone())),
+            KernelTerm::address_offset_equal_raw(offsets.each_ref().map(|a| a.shared().clone())),
+            KernelTerm::pointer_equal_raw(pointers.map(Pointer::into_shared)),
+        ] {
+            let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+            let written = KernelTermExport::condition(&root).unwrap();
+            for facts in [
+                HashMap::from([(written.flipped(), false)]),
+                HashMap::from([(written.clone(), true), (written.flipped(), false)]),
+                HashMap::from([(OldConditionTerm::Variable(Variable(99845)), false)]),
+            ] {
+                let expected = TermRewrite::for_conditions(&facts).condition(&written);
+                for polarity in [true, false] {
+                    let goal = Proposition::condition_is(condition.clone(), polarity);
+                    let Proposition::ConditionIs(result, truth) =
+                        TermRewrite::for_conditions(&facts).proposition(&goal)
+                    else {
+                        panic!("expected a condition claim");
+                    };
+                    assert_eq!(truth, polarity);
+                    assert_eq!(
+                        KernelTermExport::condition(result.root().unwrap()).unwrap(),
+                        expected
+                    );
+                    assert!(!root.has_cached_native_argument());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stored_pointer_integer_equality_uses_cited_order_after_rewriting() {
+        let _session = VerificationSession::enter();
+        let [a, b] = [99846, 99847].map(|id| OldMachineTerm::Variable(Variable(id)));
+        let base = Pointer::new(
+            Address::symbolic(Variable(99848)),
+            ProgramType::Int32Pointer,
+        );
+        let pointers = [&a, &b].map(|word| {
+            base.clone()
+                .with_address(Address::from_integer_address(word.clone()))
+                .into_shared()
+        });
+        let facts = HashMap::from([
+            (
+                OldConditionTerm::uint64_less_equal(a.clone(), b.clone()),
+                true,
+            ),
+            (OldConditionTerm::uint64_less_than(a, b), false),
+        ]);
+        let root = KernelTerm::pointer_equal_raw(pointers);
+        let goal =
+            Proposition::condition_is(StoredConditionTerm::from_root(root.clone()).unwrap(), false);
+        assert_eq!(
+            TermRewrite::for_conditions(&facts)
+                .proposition(&goal)
+                .literal_condition(),
+            Some((true, false))
+        );
+        assert!(!root.has_cached_native_argument());
     }
 
     #[test]

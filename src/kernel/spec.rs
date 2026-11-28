@@ -7050,14 +7050,7 @@ fn evaluate_resource_count_paths(
                     // An imported control's checked equality to a population
                     // count entails this bound, including any member owned by
                     // the helper at entry. It is not an arbitrary C assumption.
-                    let entry_owned = symbolic
-                        .entry_symbolic_members
-                        .clone()
-                        .unwrap_or(OldMachineTerm::constant(symbolic.entry_owned_members));
-                    let minimum = Proposition::condition_is(
-                        OldConditionTerm::signed_greater_equal(entry.clone(), entry_owned),
-                        true,
-                    );
+                    let minimum = symbolic.entry_lower_bound();
                     facts.push(ExecutionPureFact::certified(minimum.clone()));
                     // The composed quantity is itself signed arithmetic. A
                     // wrapped inner sum must not disappear inside entry + delta.
@@ -7115,19 +7108,12 @@ fn evaluate_resource_count_paths(
                             OldMachineTerm::add(entry, quantity)
                         }
                         Some((false, quantity)) => {
-                            let within = Proposition::condition_is(
-                                OldConditionTerm::signed_greater_equal(
-                                    entry.clone(),
-                                    quantity.clone(),
-                                ),
-                                true,
-                            );
+                            let condition =
+                                StoredConditionTerm::signed_int32_at_least(&entry, &quantity);
+                            let within = Proposition::condition_is(condition.clone(), true);
                             let bounded = path_assumptions.assume_proposition(minimum);
                             if !bounded.proves_exact(&within)
-                                && bounded.decide(&OldConditionTerm::signed_greater_equal(
-                                    entry.clone(),
-                                    quantity.clone(),
-                                )) != Some(true)
+                                && bounded.decide(condition.old_form()) != Some(true)
                             {
                                 obligations.push(
                                     ProofObligation::verification_condition(within)
@@ -11284,7 +11270,7 @@ pub(super) fn program_value_comparison_proposition(
             ComparisonOperator::Equal | ComparisonOperator::NotEqual
         )
     {
-        let condition = OldConditionTerm::pointer_equal(a.clone(), b.clone());
+        let condition = StoredConditionTerm::pointer_equal(a, b);
         return Some(Proposition::condition_is(
             condition,
             operator == ComparisonOperator::Equal,

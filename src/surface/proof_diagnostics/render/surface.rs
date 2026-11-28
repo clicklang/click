@@ -2905,6 +2905,11 @@ impl Printer<'_> {
                     let named = self.slice_bound.get(variable).map_or(string, |element| {
                         *element == crate::kernel::SliceElement::Str
                     });
+                    // A slice a recorded state held is that local, not its
+                    // data pointer's spelling.
+                    if let Some((name, _)) = self.labels.recorded_slice_name(count) {
+                        return Some((atom(name.to_owned()), named));
+                    }
                     return Some((self.pointer(address, depth)?, named));
                 }
                 (
@@ -2964,6 +2969,22 @@ impl Printer<'_> {
     /// variable names, a slice-valued pure call, or a slice cell's place.
     fn slice_count(&mut self, count: &OldMachineTerm, depth: usize) -> Option<Spelled> {
         let (slice, string) = match count {
+            // The slice a name holds whose count this is: `bytes.len()` for
+            // a local `bytes` holding a call's slice result, whose data
+            // pointer is the variable the count counts and is named
+            // `bytes.as_ptr()`.
+            OldMachineTerm::Variable(_)
+                if let Some(naming) = self.labels.naming.clone()
+                    && let Some((name, element)) = counted_slice_name(count, &naming) =>
+            {
+                (name, element == crate::kernel::SliceElement::Str)
+            }
+            // A slice a recorded state's local or call result held.
+            OldMachineTerm::Variable(_)
+                if let Some((name, string)) = self.labels.recorded_slice_name(count) =>
+            {
+                (name.to_owned(), string)
+            }
             OldMachineTerm::Variable(counted) => {
                 let variable = counted.counted_slice()?;
                 (
@@ -4086,6 +4107,29 @@ mod tests {
             Some("i == 0".into())
         );
     }
+}
+
+/// The name in `naming` that holds a slice whose count is `count`, with the
+/// slice's element.
+fn counted_slice_name(
+    count: &OldMachineTerm,
+    naming: &NamingTables,
+) -> Option<(String, crate::kernel::SliceElement)> {
+    naming
+        .0
+        .iter()
+        .zip(&naming.1)
+        .find_map(|(name, value)| match value {
+            crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(held))
+                if held.is_wide() && held.len() == Some(count) && name.name().len() <= 256 =>
+            {
+                let crate::kernel::ProgramType::SlicePointer(element) = held.program_type() else {
+                    return None;
+                };
+                Some((name.name().to_owned(), element))
+            }
+            _ => None,
+        })
 }
 
 #[cfg(test)]

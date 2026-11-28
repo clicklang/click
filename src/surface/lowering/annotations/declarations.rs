@@ -270,6 +270,16 @@ impl Declarations<'_> {
                             .and_then(|state| state.local_object_type(&binding))
                     })
                     .or_else(|| self.program_name_type(name.clone(), typing))
+                    // A slice local read at a recorded point, `at(p,
+                    // view[0])`, is the slice that point's state binds it
+                    // to, though no local of the current state declares it
+                    // (`design/rust-slice-values.md`, step 3c-i).
+                    .or_else(|| {
+                        typing
+                            .program_binding_click_type(name)?
+                            .interface_type()
+                            .map(|interface_type| interface_type.to_kernel_type())
+                    })
             }
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
                 Some(pointer.program_type())

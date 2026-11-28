@@ -4937,8 +4937,27 @@ impl RecordedStates {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_call_results.get(pointer)?;
-        matches!(self.call_result_native(&index), Some(ProgramValue::Pointer(held)) if held.address() == pointer)
+        // A slice result is named only as the slice
+        // ([`Self::call_result_naming_slice`]); its data pointer is
+        // `R.as_ptr()`, never `R`.
+        matches!(self.call_result_native(&index), Some(ProgramValue::Pointer(held)) if held.address() == pointer && !held.is_wide())
             .then_some(CodeRegionRef::Region(index))
+    }
+
+    /// The region whose call returned the slice whose data pointer is
+    /// `data` (`design/rust-slice-values.md`, step 3c-i), with that slice.
+    pub(crate) fn call_result_naming_slice(
+        &self,
+        data: &crate::kernel::Address,
+    ) -> Option<(CodeRegionRef, crate::kernel::Pointer)> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = *self.pointer_call_results.get(data)?;
+        match self.call_result_native(&index) {
+            Some(ProgramValue::Pointer(held)) if held.address() == data && held.is_wide() => {
+                Some((CodeRegionRef::Region(index), held.clone()))
+            }
+            _ => None,
+        }
     }
 
     fn call_result_naming_integer(

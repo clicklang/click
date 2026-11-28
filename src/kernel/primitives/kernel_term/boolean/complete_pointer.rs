@@ -73,14 +73,46 @@ impl SharedPointer {
         if self == other {
             return true;
         }
+        self.node().address.syntax_equal(&other.node().address)
+            && self.condition_domains_equal(other)
+            && self.condition_counts_equal(other)
+    }
+
+    fn condition_domains_equal(&self, other: &Self) -> bool {
         let (a, b) = (self.node(), other.node());
         a.array.is_known() == b.array.is_known()
-            && a.address.syntax_equal(&b.address)
             && a.provenance.syntax_equal(&b.provenance)
             && opaque_owners_syntax_equal(&a.array, &b.array)
             && self.condition_bounds_equal(other)
-            && self.condition_counts_equal(other)
     }
+
+    pub(in crate::kernel::primitives) fn equality_kind_with(
+        &self,
+        other: &Self,
+        same_domain: impl FnOnce() -> bool,
+    ) -> PointerEqualityKind {
+        let (a, b) = (self.node(), other.node());
+        // Even against null, a wide pointer compares its element count.
+        if a.metadata.is_some() || b.metadata.is_some() {
+            return PointerEqualityKind::Complete;
+        }
+        if a.address.is_null() || b.address.is_null() {
+            return PointerEqualityKind::Address;
+        }
+        if same_domain()
+            || (matches!(a.program_type, ProgramType::FunctionPointer(_))
+                && matches!(b.program_type, ProgramType::FunctionPointer(_)))
+        {
+            if a.address.integer_address_bits().is_some()
+                || b.address.integer_address_bits().is_some()
+            {
+                return PointerEqualityKind::IntegerAddress;
+            }
+            return PointerEqualityKind::Address;
+        }
+        PointerEqualityKind::Complete
+    }
+
     /// Whether the two carry syntactically equal element counts. Two thin
     /// pointers do.
     pub(crate) fn condition_counts_equal(&self, other: &Self) -> bool {
@@ -176,67 +208,40 @@ impl KernelTerm {
 impl KernelTerm {
     pub(crate) fn pointer_equal(arguments: [SharedPointer; 2]) -> Self {
         let [left, right] = arguments.each_ref();
-        let (a, b) = (left.node(), right.node());
-        // A pointer equal to the null pointer is null: as in
-        // `OldConditionTerm::pointer_equal`, a comparison with null states
-        // address equality, which is how `p == 0` lowers.
-        let null = Address::null().shared().clone();
-        // A wide pointer's equality also compares its metadata, which
-        // address equality cannot state: it stays the complete equality,
-        // whose admission merges the element counts too.
-        if a.metadata.is_some() || b.metadata.is_some() {
-            return Self::pointer_equal_raw(arguments);
-        }
-        if a.address.syntax_equal(&null) || b.address.syntax_equal(&null) {
-            return Self::address_equal([a.address.clone(), b.address.clone()]);
-        }
-        let same_domain = a.provenance.syntax_equal(&b.provenance)
-            && left.condition_bounds_equal(right)
-            && a.array.is_known() == b.array.is_known()
-            && opaque_owners_syntax_equal(&a.array, &b.array);
-        if same_domain
-            || (matches!(a.program_type, ProgramType::FunctionPointer(_))
-                && matches!(b.program_type, ProgramType::FunctionPointer(_)))
-        {
-            fn bits(address: &SharedAddress) -> Option<&OldMachineTerm> {
-                if matches!(address.offset().node(), KernelAddressOffset::Constant(0))
-                    && let AddressBase::PureFunctionApplication(call) = address.atom()
-                {
-                    call.integer_address_bits()
-                } else {
-                    None
-                }
+        match left.equality_kind_with(right, || left.condition_domains_equal(right)) {
+            PointerEqualityKind::Complete => Self::pointer_equal_raw(arguments),
+            PointerEqualityKind::Address => {
+                Self::address_equal([left.node().address.clone(), right.node().address.clone()])
             }
-            if bits(&a.address).is_some() || bits(&b.address).is_some() {
-                let numeric = |address: &SharedAddress| {
-                    if let Some(bits) = bits(address) {
-                        return KernelTermImport::default()
-                            .machine(MachineIntegerType::UInt64, bits);
-                    }
-                    if address.syntax_equal(&Address::null().shared().clone()) {
-                        return KernelTermImport::default().machine(
-                            MachineIntegerType::UInt64,
-                            &OldMachineTerm::uint64_constant(0),
-                        );
-                    }
-                    Self::shared_pointer_address_observation(
-                        MachineIntegerType::UInt64,
-                        address.clone(),
-                        AddressObjectClass::NONE,
-                    )
-                };
-                return Self::boolean_comparison(
+            PointerEqualityKind::IntegerAddress => KernelTermImport::default()
+                .integer_address_equality(
                     MachineIntegerType::UInt64,
-                    CompareRelation::Equal,
-                    [numeric(&a.address), numeric(&b.address)],
-                );
-            }
-            return Self::address_equal([a.address.clone(), b.address.clone()]);
+                    [&left.node().address, &right.node().address],
+                ),
         }
-        Self::pointer_equal_raw(arguments.map(|value| {
-            let p = value.node();
-            value.with_binding_type(p.program_type)
-        }))
+    }
+}
+
+impl KernelTermImport {
+    pub(crate) fn integer_address_equality(
+        &mut self,
+        format: MachineIntegerType,
+        addresses: [&SharedAddress; 2],
+    ) -> KernelTerm {
+        let words = addresses.map(|address| {
+            if let Some(bits) = address.integer_address_bits() {
+                self.machine(format, bits)
+            } else if address.is_null() {
+                self.machine(format, &OldMachineTerm::uint64_constant(0))
+            } else {
+                KernelTerm::shared_pointer_address_observation(
+                    format,
+                    address.clone(),
+                    AddressObjectClass::NONE,
+                )
+            }
+        });
+        KernelTerm::boolean_comparison(format, CompareRelation::Equal, words)
     }
 }
 
@@ -322,6 +327,57 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn program_pointer_comparisons_keep_the_selected_equality_and_written_operands() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(999131)),
+            ProgramType::Int32Pointer,
+        );
+        let addr = Address::symbolic(Variable(999132));
+        let read = crate::kernel::eval::load_variable_for_exact_cell(
+            &crate::kernel::intern_memory(SymbolicMemory::new()),
+            &addr,
+            LoadKind::Bits64,
+            8,
+        );
+        let wide = |count| {
+            pointer
+                .clone()
+                .with_element_count(OldMachineTerm::uint64_constant(count))
+        };
+        for (pointer, other) in [
+            (pointer.clone(), pointer.clone().with_address(addr)),
+            (wide(3), wide(4)),
+            (
+                pointer.clone(),
+                pointer.clone().with_address(Address::from_integer_address(
+                    OldMachineTerm::Variable(read),
+                )),
+            ),
+        ] {
+            let expected = OldConditionTerm::pointer_equal(pointer.clone(), other.clone());
+            for (operator, polarity) in [
+                (ComparisonOperator::Equal, true),
+                (ComparisonOperator::NotEqual, false),
+            ] {
+                let Some(Proposition::ConditionIs(condition, truth)) =
+                    crate::kernel::spec::program_value_comparison_proposition(
+                        &ProgramValue::Pointer(pointer.clone()),
+                        operator,
+                        &ProgramValue::Pointer(other.clone()),
+                    )
+                else {
+                    panic!("expected a pointer comparison");
+                };
+                let root = condition.root().unwrap();
+                assert_eq!(truth, polarity);
+                assert!(!root.has_cached_native_argument());
+                assert_eq!(KernelTermExport::condition(root).unwrap(), expected);
+            }
+        }
+    }
+
     #[test]
     fn complete_pointer_conditions_preserve_substitution_domains() {
         let _session = crate::kernel::VerificationSession::enter();

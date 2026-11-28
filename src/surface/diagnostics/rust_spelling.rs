@@ -326,7 +326,12 @@ pub(crate) fn slice_call_spelling(name: &str, arguments: &[String]) -> Option<St
     // A string slice's operations are `str`'s methods.
     if let Some(method) = base.strip_prefix("click::rust::str::") {
         return match (method, arguments) {
-            ("len" | "as_ptr" | "as_bytes", [string]) => Some(format!("{string}.{method}()")),
+            ("len" | "as_ptr", [string]) => Some(format!("{string}.{method}()")),
+            // The byte view is the library call: a `fn`'s `&str` parameter
+            // has only `len()` and `as_ptr()` as methods, so `s.as_bytes()`
+            // would not lower back there (`design/rust-slice-values.md`,
+            // step 3c-ii).
+            ("as_bytes", [string]) => Some(format!("click::rust::str::as_bytes({string})")),
             ("from_utf8_unchecked", [bytes]) => {
                 Some(format!("click::rust::str::from_utf8_unchecked({bytes})"))
             }

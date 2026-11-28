@@ -4430,14 +4430,12 @@ fn execute_verified_function_applications_with_suspension(
             // Entry field expressions can denote an empty batch even though
             // the resource planner has already omitted its zero member rights.
             let exchange_quantity = if !events.owns_imported_population_member(&description)
-                && crate::kernel::quantity_condition_holds(
+                && crate::kernel::quantity_comparison_holds(
                     &effective_assumptions,
-                    OldConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(quantity.old_form().clone()),
-                        right: Box::new(OldMachineTerm::constant(0)),
-                    },
+                    MachineIntegerType::Int32,
+                    CompareRelation::Equal,
+                    quantity.old_form(),
+                    &OldMachineTerm::constant(0),
                 ) {
                 OldMachineTerm::constant(0)
             } else {
@@ -17706,14 +17704,12 @@ fn consume_returned_resource_unit(
     // definition's body.
     interface.composite_resource_definition(name)?;
 
-    let unit = quantity_condition_holds(
+    let unit = quantity_comparison_holds(
         assumptions,
-        OldConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(quantity.old_form().clone()),
-            right: Box::new(OldMachineTerm::constant(1)),
-        },
+        MachineIntegerType::Int32,
+        CompareRelation::Equal,
+        quantity.old_form(),
+        &OldMachineTerm::constant(1),
     );
     if !active.insert(required.clone()) {
         return None;
@@ -20701,14 +20697,12 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     Ok(quantity) => quantity,
                     Err(error) => return Ok(Err(error)),
                 };
-                if !quantity_condition_holds(
+                if !quantity_comparison_holds(
                     assumptions,
-                    OldConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::GreaterEqual,
-                        left: Box::new(quantity.old_form().clone()),
-                        right: Box::new(OldMachineTerm::constant(0)),
-                    },
+                    MachineIntegerType::Int32,
+                    CompareRelation::GreaterEqual,
+                    quantity.old_form(),
+                    &OldMachineTerm::constant(0),
                 ) {
                     return Ok(Err(RuntimeError::FunctionContract(
                         "declared resource quantity is not known nonnegative; state that the \
@@ -22719,25 +22713,19 @@ fn contract_exit_outcome_with_boundary_transfer(
                                         .imported_member_delta_since_entry(description)
                                         .is_some_and(|(produce, actual)| {
                                             (!produce
-                                                || crate::kernel::quantity_condition_holds(
+                                                || crate::kernel::quantity_comparison_holds(
                                                     assumptions,
-                                                    OldConditionTerm::Compare {
-                                                        format: MachineIntegerType::Int32,
-                                                        relation: CompareRelation::Equal,
-                                                        left: Box::new(actual.clone()),
-                                                        right: Box::new(OldMachineTerm::constant(
-                                                            0,
-                                                        )),
-                                                    },
+                                                    MachineIntegerType::Int32,
+                                                    CompareRelation::Equal,
+                                                    &actual,
+                                                    &OldMachineTerm::constant(0),
                                                 ))
-                                                && crate::kernel::quantity_condition_holds(
+                                                && crate::kernel::quantity_comparison_holds(
                                                     assumptions,
-                                                    OldConditionTerm::Compare {
-                                                        format: MachineIntegerType::Int32,
-                                                        relation: CompareRelation::Equal,
-                                                        left: Box::new(actual),
-                                                        right: Box::new(expected.clone()),
-                                                    },
+                                                    MachineIntegerType::Int32,
+                                                    CompareRelation::Equal,
+                                                    &actual,
+                                                    expected,
                                                 )
                                         })
                                 })
@@ -22751,23 +22739,19 @@ fn contract_exit_outcome_with_boundary_transfer(
                             .imported_member_delta_since_entry(description)
                             .is_some_and(|(actual_produce, actual_quantity)| {
                                 (actual_produce == produce
-                                    || crate::kernel::quantity_condition_holds(
+                                    || crate::kernel::quantity_comparison_holds(
                                         assumptions,
-                                        OldConditionTerm::Compare {
-                                            format: MachineIntegerType::Int32,
-                                            relation: CompareRelation::Equal,
-                                            left: Box::new(actual_quantity.clone()),
-                                            right: Box::new(OldMachineTerm::constant(0)),
-                                        },
+                                        MachineIntegerType::Int32,
+                                        CompareRelation::Equal,
+                                        &actual_quantity,
+                                        &OldMachineTerm::constant(0),
                                     ))
-                                    && crate::kernel::quantity_condition_holds(
+                                    && crate::kernel::quantity_comparison_holds(
                                         assumptions,
-                                        OldConditionTerm::Compare {
-                                            format: MachineIntegerType::Int32,
-                                            relation: CompareRelation::Equal,
-                                            left: Box::new(actual_quantity),
-                                            right: Box::new(expected_quantity.clone()),
-                                        },
+                                        MachineIntegerType::Int32,
+                                        CompareRelation::Equal,
+                                        &actual_quantity,
+                                        expected_quantity,
                                     )
                             })
                     } else {

@@ -8,6 +8,116 @@ use crate::kernel::{
     native_constant, uint64_constant,
 };
 
+enum Word64Equality {
+    Constant(bool),
+    Null(Box<Address>),
+    Words(Box<OldMachineTerm>, Box<OldMachineTerm>),
+}
+
+fn written_alignment(masked: MachineOperandView<'_>) -> Option<(&Address, u64)> {
+    use MachineOperandView as V;
+    masked.pointer_alignment(|word| {
+        let native = match word {
+            V::Old(native) => native,
+            V::Shared(root) => root.machine_conversion_leaf()?,
+        };
+        match native {
+            OldMachineTerm::IntegerAddress(pointer, _) => Some(pointer.as_ref()),
+            _ => None,
+        }
+    })
+}
+
+fn word64_alignment<'a>(
+    left: &'a OldMachineTerm,
+    right: &'a OldMachineTerm,
+) -> Option<(&'a Address, u64)> {
+    let masked = if right.bitvector64_as_const() == Some(0) {
+        left
+    } else if left.bitvector64_as_const() == Some(0) {
+        right
+    } else {
+        return None;
+    };
+    written_alignment(MachineOperandView::Old(masked))
+}
+
+fn distinct_word64_equality(left: OldMachineTerm, right: OldMachineTerm) -> Word64Equality {
+    if let (OldMachineTerm::IntegerAddress(pointer, _), other)
+    | (other, OldMachineTerm::IntegerAddress(pointer, _)) = (&left, &right)
+        && other.uint64_as_const() == Some(0)
+    {
+        return Word64Equality::Null(pointer.clone());
+    }
+    if let (Some(a), Some(b)) = (left.bitvector64_as_const(), right.bitvector64_as_const()) {
+        return Word64Equality::Constant(a == b);
+    }
+    let words = match word64_alignment(&left, &right) {
+        Some((address, alignment)) => alignment_words(address, alignment),
+        None => [left, right],
+    };
+    let [left, right] = words.map(Box::new);
+    Word64Equality::Words(left, right)
+}
+
+// Alignment names the low address bits independently of the object's class.
+fn alignment_words(pointer: &Address, alignment: u64) -> [OldMachineTerm; 2] {
+    [
+        OldMachineTerm::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseAnd,
+            left: Box::new(OldMachineTerm::IntegerAddress(
+                Box::new(pointer.clone()),
+                AddressObjectClass::NONE,
+            )),
+            right: Box::new(OldMachineTerm::uint64_constant(alignment - 1)),
+        },
+        OldMachineTerm::uint64_constant(0),
+    ]
+}
+
+impl StoredConditionTerm {
+    /// Logical lowering retains reflexive and bounded comparisons as written.
+    /// Other word equalities use the same reductions as the native checker.
+    pub(crate) fn logical_word64_equality(
+        format: MachineIntegerType,
+        left: OldMachineTerm,
+        right: OldMachineTerm,
+        in_conditional: bool,
+    ) -> Self {
+        use crate::kernel::machine_integer::comparison::retained_comparison_operands;
+        debug_assert_eq!(format.format().bits(), 64);
+        let views = [
+            MachineOperandView::Old(&left),
+            MachineOperandView::Old(&right),
+        ];
+        let words = if let Some(words) = retained_comparison_operands(format, views, in_conditional)
+        {
+            words
+        } else if left == right {
+            [left, right]
+        } else {
+            match distinct_word64_equality(left, right) {
+                Word64Equality::Constant(value) => return Self::constant(value),
+                Word64Equality::Null(address) => {
+                    return Self::address_equal(&address, &Address::null());
+                }
+                Word64Equality::Words(left, right) => [*left, *right],
+            }
+        };
+        // Equality of 64-bit patterns is filed at Int64 for both signednesses.
+        let format = MachineIntegerType::Int64;
+        let mut import = KernelTermImport::for_exact_field_inputs();
+        let args = words.each_ref().map(|word| import.machine(format, word));
+        Self::from_root(KernelTerm::boolean_comparison_raw(
+            format,
+            CompareRelation::Equal,
+            args,
+        ))
+        .expect("64-bit word equality")
+    }
+}
+
 // Operands here have already undergone the language's scalar promotions.
 // Keep both constant-folding entry points on the shared format semantics.
 fn checked_machine_div_rem_const(
@@ -3216,7 +3326,6 @@ impl OldConditionTerm {
     /// Recognizes the alignment shape in either operand order and with any
     /// constant spelling of the mask and the zero.
     pub(crate) fn as_pointer_alignment(&self) -> Option<(&Address, u64)> {
-        use crate::kernel::MachineOperandView as V;
         let masked = match self {
             Self::Compare {
                 format: MachineIntegerType::Int64,
@@ -3224,13 +3333,7 @@ impl OldConditionTerm {
                 left,
                 right,
             } => {
-                if right.bitvector64_as_const() == Some(0) {
-                    V::Old(left)
-                } else if left.bitvector64_as_const() == Some(0) {
-                    V::Old(right)
-                } else {
-                    return None;
-                }
+                return word64_alignment(left, right);
             }
             Self::IntegerEqual(left, right) => {
                 let word = if right.as_const().is_some_and(|n| n == &0.into()) {
@@ -3250,60 +3353,22 @@ impl OldConditionTerm {
             }
             _ => return None,
         };
-        masked.pointer_alignment(|word| {
-            let native = match word {
-                V::Old(native) => native,
-                V::Shared(root) => root.machine_conversion_leaf()?,
-            };
-            match native {
-                OldMachineTerm::IntegerAddress(pointer, _) => Some(pointer.as_ref()),
-                _ => None,
-            }
-        })
+        written_alignment(masked)
     }
 
     pub(crate) fn int64_equal(left: OldMachineTerm, right: OldMachineTerm) -> Self {
         if left == right {
             return Self::Constant(true);
         }
-        // An address is zero exactly when its pointer is null. Two addresses
-        // stay an address equality: equal addresses are not equal pointers.
-        if let (OldMachineTerm::IntegerAddress(pointer, _), other)
-        | (other, OldMachineTerm::IntegerAddress(pointer, _)) = (&left, &right)
-            && other.uint64_as_const() == Some(0)
-        {
-            return Self::address_equal(pointer.as_ref().clone(), Address::null());
-        }
-        match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
-            (Some(left), Some(right)) => Self::Constant(left == right),
-            _ => {
-                let condition = Self::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                };
-                // Alignment describes address bits, independently of the
-                // object's class. Give C masks and `aligned` one canonical
-                // proposition while leaving pointer-producing words intact.
-                if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
-                    return Self::Compare {
-                        format: MachineIntegerType::Int64,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(OldMachineTerm::Binary {
-                            format: MachineIntegerType::UInt64,
-                            op: MachineBinaryOp::BitwiseAnd,
-                            left: Box::new(OldMachineTerm::IntegerAddress(
-                                Box::new(pointer.clone()),
-                                crate::kernel::AddressObjectClass::NONE,
-                            )),
-                            right: Box::new(OldMachineTerm::uint64_constant(alignment - 1)),
-                        }),
-                        right: Box::new(OldMachineTerm::uint64_constant(0)),
-                    };
-                }
-                condition
-            }
+        match distinct_word64_equality(left, right) {
+            Word64Equality::Constant(value) => Self::Constant(value),
+            Word64Equality::Null(address) => Self::address_equal(*address, Address::null()),
+            Word64Equality::Words(left, right) => Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
         }
     }
 
@@ -3659,10 +3724,12 @@ impl OldConditionTerm {
         left: AddressOffset,
         right: AddressOffset,
     ) -> Self {
-        match (left.as_const(), right.as_const()) {
-            (Some(left), Some(right)) => Self::Constant(left == right),
-            _ if left.shared().differs_by_residue(right.shared()) => Self::Constant(false),
-            _ => Self::AddressOffsetEqual(Box::new(left), Box::new(right)),
+        match left
+            .shared()
+            .equality_value(right.shared(), SharedAddressOffset::written_constant)
+        {
+            Some(value) => Self::Constant(value),
+            None => Self::AddressOffsetEqual(Box::new(left), Box::new(right)),
         }
     }
 
@@ -3687,57 +3754,26 @@ impl OldConditionTerm {
         }
     }
 
-    /// Pointer equality as logical lowering states it: a non-null pointer
-    /// value compared with itself keeps its `AddressEqual` node instead of
-    /// folding to `true`, so the fact raises to `p == p` and lowers back
-    /// (`docs/internals/raise-lower-principle.md`, "Lowering is structural").
-    /// Producers whose result must match a lowered goal use it too; checking
-    /// decides the reflexive comparison (`OldConditionTerm::reflexive_value`).
-    pub(crate) fn logical_pointer_equal(left: Pointer, right: Pointer) -> Self {
-        if left == right && !left.is_null() && !left.is_wide() {
-            let address = left.address().clone();
-            return Self::AddressEqual(Box::new(address.clone()), Box::new(address));
-        }
-        Self::pointer_equal(left, right)
-    }
-
     pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
         match left.equality_kind(&right) {
             PointerEqualityKind::Complete => Self::PointerEqual(Box::new(left), Box::new(right)),
             PointerEqualityKind::Address => {
                 Self::address_equal(left.address().clone(), right.address().clone())
             }
-            PointerEqualityKind::IntegerAddress => Self::integer_address_equality(&left, &right),
+            PointerEqualityKind::IntegerAddress => Self::uint64_equal(
+                OldMachineTerm::integer_address(left.into_pointer()),
+                OldMachineTerm::integer_address(right.into_pointer()),
+            ),
         }
     }
 
-    pub(crate) fn integer_address_equality(left: &Pointer, right: &Pointer) -> Self {
-        Self::uint64_equal(
-            OldMachineTerm::integer_address(left.address().clone()),
-            OldMachineTerm::integer_address(right.address().clone()),
-        )
-    }
-
     pub fn address_equal(left: Address, right: Address) -> Self {
-        if left.blocks_proven_distinct(&right) {
-            Self::Constant(false)
-        } else {
-            // Keep the common base as evidence: a later equal pointer may use
-            // another base spelling. The graph derives the offset comparison
-            // without discarding the original address comparison.
-            // Preserve symbolic reflexive comparisons as well: exact fact
-            // checking must still see the comparison after a stored pointer
-            // resolves to the same symbolic value on both sides.
-            // A loaded pointer's block names an unknown address, so equal
-            // displacements in it are a symbolic reflexive comparison too.
-            if left.base == right.base
-                && let Self::Constant(value) =
-                    Self::address_offset_equal(left.offset.clone(), right.offset.clone())
-                && !(value && matches!(left.base, AddressBase::Load(_) | AddressBase::SliceData(_)))
-            {
-                return Self::Constant(value);
-            }
-            Self::AddressEqual(Box::new(left), Box::new(right))
+        match left
+            .shared()
+            .equality_value(right.shared(), SharedAddressOffset::written_constant)
+        {
+            Some(value) => Self::Constant(value),
+            None => Self::AddressEqual(Box::new(left), Box::new(right)),
         }
     }
 }
@@ -4602,26 +4638,8 @@ pub(crate) enum PointerEqualityKind {
 
 impl Pointer {
     pub(crate) fn equality_kind(&self, other: &Self) -> PointerEqualityKind {
-        // A wide pointer comparison includes its element count, even against null.
-        if self.is_wide() || other.is_wide() {
-            return PointerEqualityKind::Complete;
-        }
-        if self.is_null() || other.is_null() {
-            return PointerEqualityKind::Address;
-        }
-        if self.same_provenance_as(other)
-            || (matches!(self.program_type(), ProgramType::FunctionPointer(_))
-                && matches!(other.program_type(), ProgramType::FunctionPointer(_)))
-        {
-            // Once the domain agrees, use the original word of an integer cast.
-            if self.address().integer_address_bits().is_some()
-                || other.address().integer_address_bits().is_some()
-            {
-                return PointerEqualityKind::IntegerAddress;
-            }
-            return PointerEqualityKind::Address;
-        }
-        PointerEqualityKind::Complete
+        self.shared()
+            .equality_kind_with(other.shared(), || self.same_provenance_as(other))
     }
 
     /// Comparing offsets decides complete pointer equality only when the base,
@@ -4643,13 +4661,7 @@ impl Pointer {
 
 impl Address {
     pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&OldMachineTerm> {
-        if matches!(self.offset.view(), OffsetView::Constant(0))
-            && let AddressBase::PureFunctionApplication(application) = &self.base
-        {
-            application.integer_address_bits()
-        } else {
-            None
-        }
+        self.shared().integer_address_bits()
     }
 
     /// The raw base address from which this pointer's object provenance came.
@@ -5757,6 +5769,11 @@ mod shift_overflow_refusal_tests {
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
         p if let Some((actual, expected)) = p.literal_condition() => actual == expected,
+        Proposition::ConditionIs(condition, value)
+            if let Some(pair) = condition.pointer_equality() =>
+        {
+            *value && pair.is_reflexive()
+        }
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((
                 condition @ OldConditionTerm::Compare {
@@ -5795,6 +5812,9 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
+    if condition.pointer_equality().is_some() {
+        return false;
+    }
     // The range of a machine operand read at `format`.
     fn machine_range(
         term: MachineOperandView<'_>,
@@ -5903,6 +5923,9 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    if let Some(pair) = condition.pointer_equality() {
+        return Some(Proposition::condition_is(pair.mirrored(), *value));
+    }
     let mirrored = match condition.old_form() {
         OldConditionTerm::IntegerEqual(left, right) => {
             OldConditionTerm::IntegerEqual(right.clone(), left.clone())
@@ -5935,15 +5958,6 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
             left: right.clone(),
             right: left.clone(),
         },
-        OldConditionTerm::AddressOffsetEqual(left, right) => {
-            OldConditionTerm::AddressOffsetEqual(right.clone(), left.clone())
-        }
-        OldConditionTerm::AddressEqual(left, right) => {
-            OldConditionTerm::AddressEqual(right.clone(), left.clone())
-        }
-        OldConditionTerm::PointerEqual(left, right) => {
-            OldConditionTerm::PointerEqual(right.clone(), left.clone())
-        }
         _ => return None,
     };
     Some(Proposition::condition_is(mirrored, *value))
@@ -5994,6 +6008,54 @@ fn listed_premise_holds_with(
 #[cfg(test)]
 mod integer_equality_citation_tests {
     use super::*;
+
+    #[test]
+    fn listed_pointer_equalities_use_stored_operands_in_both_orders() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let addresses = [Variable(709421), Variable(709422)].map(Address::symbolic);
+        let offsets = [Variable(709423), Variable(709424)].map(AddressOffset::variable);
+        let pointers = [3, 7].map(|count| {
+            Pointer::new(addresses[0].clone(), ProgramType::Int32Pointer)
+                .with_element_count(OldMachineTerm::uint64_constant(count))
+        });
+        let roots = |i: usize, j: usize| {
+            [
+                KernelTerm::address_equal_raw([
+                    addresses[i].shared().clone(),
+                    addresses[j].shared().clone(),
+                ]),
+                KernelTerm::address_offset_equal_raw([
+                    offsets[i].shared().clone(),
+                    offsets[j].shared().clone(),
+                ]),
+                KernelTerm::pointer_equal_raw([
+                    pointers[i].shared().clone(),
+                    pointers[j].shared().clone(),
+                ]),
+            ]
+        };
+        for ((root, reverse), reflexive) in
+            roots(0, 1).into_iter().zip(roots(1, 0)).zip(roots(0, 0))
+        {
+            for truth in [true, false] {
+                let premise = |term: &KernelTerm| {
+                    Proposition::condition_is(
+                        StoredConditionTerm::from_root(term.clone()).unwrap(),
+                        truth,
+                    )
+                };
+                assert_eq!(proposition_holds_without_facts(&premise(&reflexive)), truth);
+                assert!(!proposition_holds_without_facts(&premise(&root)));
+                assert!(listed_premise_holds(&premise(&root), |fact| matches!(fact,
+                    Proposition::ConditionIs(term, polarity) if *polarity == truth && term.root() == Some(&reverse))));
+            }
+            assert!(
+                [root, reverse, reflexive]
+                    .iter()
+                    .all(|term| !term.has_cached_native_argument())
+            );
+        }
+    }
 
     #[test]
     fn listed_closed_native_order_is_checked_without_facts() {

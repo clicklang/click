@@ -389,6 +389,21 @@ impl Hash for SharedAddress {
 }
 
 impl SharedAddress {
+    pub(in crate::kernel) fn is_null(&self) -> bool {
+        matches!(self.atom(), AddressBase::Concrete(name) if name == "null")
+            && matches!(self.offset().node(), KernelAddressOffset::Constant(0))
+    }
+
+    pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&OldMachineTerm> {
+        if matches!(self.offset().node(), KernelAddressOffset::Constant(0))
+            && let AddressBase::PureFunctionApplication(application) = self.atom()
+        {
+            application.integer_address_bits()
+        } else {
+            None
+        }
+    }
+
     fn from_parts(identity: BlockIdentity, base: AddressBase, offset: AddressOffset) -> Self {
         Self(Arc::new(SharedAddressData {
             parts: AddressParts {
@@ -709,6 +724,23 @@ mod tests {
             assert_eq!(binding.program_type(), Some(ProgramType::Int64));
             assert_eq!(binding.to_string(), "y");
         }
+        let first = crate::kernel::Pointer::new(retained, ProgramType::UInt8Pointer);
+        let second = crate::kernel::Pointer::new(produced, ProgramType::UInt8Pointer);
+        let forward = StoredConditionTerm::logical_pointer_equal(&first, &second);
+        let reverse = StoredConditionTerm::logical_pointer_equal(&second, &first);
+        for (comparison, name, ty) in [
+            (forward, "x", ProgramType::Int32),
+            (reverse, "y", ProgramType::Int64),
+        ] {
+            assert!(!comparison.root().unwrap().has_cached_native_argument());
+            for address in comparison.operand_view().pointer_addresses().unwrap() {
+                let AddressBase::AutomaticLocal { binding, .. } = address.atom() else {
+                    panic!("expected local block")
+                };
+                assert_eq!(binding.spelling(), Some(name));
+                assert_eq!(binding.program_type(), Some(ty));
+            }
+        }
     }
 
     #[test]
@@ -752,10 +784,15 @@ mod tests {
                 assert_eq!(binding.spelling(), Some(name));
                 assert_eq!(binding.program_type(), Some(ty));
                 numeric_roots.push(numeric);
-                StoredConditionTerm::from(OldConditionTerm::AddressEqual(
+                let stored = StoredConditionTerm::address_equal(&local, &other);
+                let root = stored.root().unwrap();
+                assert!(!root.has_cached_native_argument());
+                let native = StoredConditionTerm::from(OldConditionTerm::AddressEqual(
                     Box::new(local),
                     Box::new(other.clone()),
-                ))
+                ));
+                assert_eq!(native.root(), Some(root));
+                stored
             });
             assert_ne!(numeric_roots[0], numeric_roots[1]);
             let roots = stored.each_ref().map(|term| term.root().unwrap());

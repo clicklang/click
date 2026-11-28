@@ -13,8 +13,9 @@ one from raw parts, the Surface `Slice<T>` is the built-in type, with
 every wide pointer raising to it, and `Str` is its string slice type, with
 `str`'s operations. Steps 3a and 3b are done: a program reads and builds a
 wide value through three program operations, and a Rust `fn`'s slice
-parameters and locals are one wide value. Returns and `as_bytes` in imported
-Rust remain (step 3c).
+parameters and locals are one wide value. Step 3c is done: slice returns are
+one wide value, and `s.as_bytes()` in imported Rust calls the library's
+`str::as_bytes`. Steps 4 and 5 remain.
 
 ## Requirements
 
@@ -761,17 +762,17 @@ construct.
      a slice at a type other than its name's as `str::as_bytes(s)` or
      `str::from_utf8_unchecked(v)`, and an unnamed string slice as
      `str::from_utf8_unchecked(slice::from_raw_parts(p, n))`. A slice a
-     call returns is never a string slice, since no front end returns a
-     `&str`. The diagnostic renderer and `rust_spelling` print the same
+     call returns was never a string slice when this landed; step 3c-i
+     lets a Rust `fn` return a `&str`. The diagnostic renderer and `rust_spelling` print the same
      forms, `s.as_bytes()` and `click::rust::str::from_utf8_unchecked(v)`.
      The UTF-8 invariant is not stated. Tests:
      `a_string_slice_raises_with_its_own_operations`,
      `surface::tests::rust_slice_functions` (the string slice cases),
      `rust_slice_string_values_read_with_str_methods`.
-   - **2b-iii-d-ii. `as_bytes` in imported Rust.** Not done.
+   - **2b-iii-d-ii. `as_bytes` in imported Rust.** Done as step 3c-ii.
      `str.interface.click` states `as_bytes` as `result ==
      str::as_bytes(s)`, mapped in the Rust front end's name table only.
-     It cannot land before step 3: its result is a slice a call returns,
+     It could not land before step 3: its result is a slice a call returns,
      and a Rust local or argument of slice type is still a pointer and a
      length, which a wide call result cannot initialize without a
      program-level component read or a wide local, so this part moves
@@ -865,7 +866,168 @@ construct.
      counts one parameter per slice.
    - **3c. Wide returns.** Returns carry the wide value, and Rust
      `s.as_bytes()` gets a name-table entry
-     (2b-iii-d-ii).
+     (2b-iii-d-ii). In two parts:
+   - **3c-i. Slice results.** Done, with one known limit. A Rust `fn`
+     that returns `&[T]`, `&mut [T]` or `&str` returns one value of slice
+     type (`InterfaceType::Slice`, `ProgramType::SlicePointer`); Charon
+     marks a `&str` result `Type::StrSlice`, which the body, reading it as
+     bytes, returns cast to `str`. A return place, a `ReturnValue` and a
+     call result are one wide value (`slice_operand` in
+     `rust/lowering.rs`); a call's slice result is a call step
+     (`ProgramStatement::CallResult` at the slice type) or assigned whole
+     to its destination, a slice local, and a returned `&str` assigned to a
+     local is cast to `[u8]`. Two importer folds keep tail calls and
+     reborrowed returns free of unnamed temporaries: `call_steps` makes a
+     slice result its continuation only reborrows (`_2 = f(..); _0 =
+     &*_2`) a step, and `fold_adjacent_slice_borrows` collapses a reborrow
+     of a reborrowed temporary (`_2 = &mut *_1; _0 = &mut *_2`). In a
+     sidecar, `-> &[T]` parses to the slice type and `result` is a slice
+     name, so `result.len()`, `result.as_ptr()` and `result[i]` are the
+     program slice operations on the result.
+
+     Raising: a call's slice result is `symbolic_call_result`'s wide
+     pointer on a fresh variable. `call_result_slice`
+     (`surface_synthesis/slices.rs`) names it as the call's result `R`, a
+     live call step or a recorded region result
+     (`RecordedStates::call_result_naming_slice`, keyed by its data
+     pointer and requiring a wide held value); its data pointer raises as
+     `R.as_ptr()` and its count as `R.len()`. The thin call-result routes
+     (`call_result_naming_pointer`, `call_result_pointer_expression`)
+     refuse a wide held value, so a data pointer never prints as the
+     slice. Lowering types a region result holding a slice at its slice
+     type (`contract_expression_click_type`, and
+     `infer_unconstrained_call_argument_type` for a generic argument), so
+     `slice::len(R)` infers its element. A slice local's component read at
+     a recorded point, `at(statement(0).exit, view.as_ptr())`, lowers its
+     operand in that point's state, as a scalar local's read does; before,
+     the program expression read the current state's locals, and a slice
+     local out of scope there was an unbound variable (this was not
+     specific to call results: `let view = bytes;` failed the same way).
+     Test: `charon_slice_returns_are_one_slice`
+     (`tests/fixtures/rust-verification/slice-returns`); its `measured`
+     proof reads `at(statement(0).exit, view.as_ptr())` and `.len()`. The
+     raise-lower audit reports no failures on the fixture.
+
+     Fixed in `slice-reads-b`: a caller that reads through a returned
+     slice is proved:
+
+     ```rust
+     pub fn whole(bytes: &[u8]) -> &[u8] { bytes }
+     pub fn first_of(bytes: &[u8]) -> u8 { let view = whole(bytes); view[0] }
+     ```
+
+     ```click
+     fn reads::whole(bytes: &[u8]) -> &[u8] {
+         ensures result.len() == bytes.len();
+         ensures result.as_ptr() == bytes.as_ptr();
+     }
+     fn reads::first_of(bytes: &[u8]) -> u8 {
+         requires 0u64 < bytes.len();
+         views *bytes;
+         ensures result == bytes[0];
+     }
+     ```
+
+     Before, the goal `result == bytes[0]` stayed open ("the two sides read
+     the same address in different memory states", both printing
+     `read<UInt8>(state#1, bytes.as_ptr())`), though the resource tracker
+     answers `Same` for the cell between the two reads. One unchanged cell
+     had two names. The claim's `bytes[0]` is a point-named read: its site's
+     `read_version` names the argument's cell at the function-entry point.
+     The program's `view[0]` is a C read through the call result's fresh
+     data pointer, which has no indexed version, so `point_named_symbolic_read`
+     declined it; `canonicalized_retained_symbolic_load_value_with_identity`
+     (`kernel/eval/memory_loads.rs`) then selected the argument's cell
+     through the checked address alias (`logical_memory_load_address`) and
+     built a memory-named read of it, which the legacy walk names at the
+     entry memory. Only a cross-state load equality could join the two, and
+     the kernel does not build one from facts
+     (`cross_state_load_equality_requires_a_supplied_conclusion`). Now a C
+     read whose address the alias selected is named at that cell's version
+     where its site names one, as a read written with that address is: it
+     is constructed at the site, by the same `point_named_symbolic_read`, and
+     nothing checks it afterwards. A read the site has no version for keeps
+     the memory-named read. The cost is one indexed `read_version` lookup,
+     only for a read whose address the alias changed. Classification: a bug
+     (one cell version had two names). Tests: `slice_returns::first` in
+     `charon_slice_returns_are_one_slice` and the element claim of
+     `str_bytes::first_byte` in `charon_str_as_bytes_reads_the_same_bytes`,
+     each with a refused `+ 1u8` variant.
+
+     Still open: a proof's logical read through the returned slice, `have
+     at(statement(0).exit, view[0]) == bytes[0];` in `first_of`, is not
+     proved. A logical read keeps the address it was written with (lowering
+     is fact-stable), so it reads the call result's data pointer, which has
+     no version point; it is a memory-named read at the entry memory, and
+     `bytes[0]` is point-named at the entry point. Joining those two forms
+     of an entry read is the memory-named/point-named read migration, not a
+     slice question. The contract claim above, over the program's read, is
+     proved.
+
+     Also fixed in `slice-reads-b`: the diagnostic renderer named a slice
+     local's data pointer at a recorded point by the local itself, so the
+     call's postcondition printed as `at(statement(0).exit, view) ==
+     bytes.as_ptr()`, which does not lower ("cannot compare `Slice<uint8>`
+     and `uint8*`"), and its count as `at(statement(0).exit,
+     view.as_ptr()).len()` once that was fixed. A recorded slice local's
+     data pointer is now `at(p, view.as_ptr())` and the slice, by its count,
+     is `at(p, view)` (`fallback_slice_name`, read by `slice_count` and
+     `slice_at_own_type`); a recorded call's slice result is `R.as_ptr()`
+     and `R` the same way. The facts print as `at(statement(0).exit,
+     view).len() == bytes.len()` and `at(statement(0).exit, view.as_ptr())
+     == bytes.as_ptr()`; the test asserts both.
+
+     Fixed in `slice-reads`: with no call, in `let view = bytes; view[0]`,
+     `have at(statement(0).exit, view[0]) == bytes[0];` was not proved
+     because the recorded-point read of `view[0]` was a 32-bit read
+     (`read<Bits32>`): `slice_expression_type`
+     (`lowering/annotations/declarations.rs`) found no slice type for
+     `view`, which no local of the current state declares, and the read fell
+     back to the placeholder element `int32`. It now takes the type of the
+     value the recorded point's state binds `view` to, so the read is at the
+     slice's element type and the `have` is proved. Test: the
+     `slice_returns::copied` proof of `charon_slice_returns_are_one_slice`.
+
+     Fixed in 3c-ii: the parameter routes of `synthesize_surface_pointer`
+     and `synthesize_surface_pointer_offset` named a slice parameter's data
+     pointer as the slice, so a read through it raised as `*(bytes as
+     (uint8 *))`, which does not lower. They now name it `bytes.as_ptr()`
+     when the argument is wide (`parameter_pointer_name`), and a read
+     through a slice parameter takes the slice's element type, so it raises
+     as `*bytes.as_ptr()` and lowers back to the same read. Test:
+     `a_read_through_a_slice_parameter_names_its_data_pointer`.
+   - **3c-ii. `as_bytes` in imported Rust.** Done (2b-iii-d-ii), with the
+     3c-i limits. `s.as_bytes()` on a `&str` is a name-table entry
+     (`STR_METHODS` in `rust/standard_library.rs`, result `&[u8]`), so the
+     call is the external `str::as_bytes`, whose contract is the line
+     `fn str::as_bytes(s: &str) -> &[u8] { ensures result ==
+     click::rust::str::as_bytes(s); }` of `str.interface.click`: the spec
+     retyping, the same data pointer and length at `[u8]`. Its result is a
+     call's slice result, assigned to a slice local as 3c-i lowers any. The
+     contract names the spec function by its full path: inside `fn
+     str::as_bytes` the method form `s.as_bytes()` of the `&str` parameter
+     does not parse to the spec function ("application expects a
+     specification lambda value"), since a `fn`'s `&str` parameter has only
+     `len()` and `as_ptr()` as program methods. Test:
+     `charon_str_as_bytes_reads_the_same_bytes`
+     (`tests/fixtures/rust-verification/str-bytes`): the length is the
+     string's, an index into the view is in bounds under `0 < s.len()`, and
+     without it the index is refused. Limits, shared with every call's slice
+     result: `s.as_bytes().len()` is refused ("an unnamed compiler local
+     requires storage with no supported identity"; so is `whole(bytes).len()`
+     for a crate `fn`), and `result == click::rust::str::as_bytes(s)[0]` for
+     `let bytes = s.as_bytes(); bytes[0]` was not proved (the 3c-i element
+     read limit, fixed in `slice-reads-b`; it is proved now). Its expansion
+     raised the byte view as `s.as_bytes()`, which does not lower for a
+     `fn`'s `&str` parameter; the Rust spelling of `str::as_bytes` is now
+     the library call `click::rust::str::as_bytes(s)`
+     (`slice_call_spelling`), so the expansion audit passes. The refused index printed its condition as `0u64 <
+     bytes.as_ptr().len()`, which does not lower: a call's slice result has
+     its data pointer at the variable its count counts, so the diagnostic
+     renderer (`slice_count`, `proof_diagnostics/render/surface.rs`) named
+     the count through the data pointer's label. Fixed in `slice-reads`:
+     the count names the local that holds a slice with that count, `0u64 <
+     bytes.len()`; the test asserts the spelling.
 4. **split_at, iterators, chunks.** Their inputs and the slices they yield
    are wide pointers; their internal fields stay.
 5. **Cleanup and docs.** `docs/reference/rust.md` (byte slices, string

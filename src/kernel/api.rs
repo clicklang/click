@@ -6743,7 +6743,7 @@ pub fn checked_owned_resource_count_lower_bound(
     if !state.resources().satisfies_fact(owned, assumptions) {
         return None;
     }
-    let quantity = owned.owned_quantity_term()?.clone();
+    let quantity = owned.owned_quantity_term()?;
     let (name, arguments) = match owned.resource() {
         Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
             return None;
@@ -6802,29 +6802,43 @@ pub fn checked_owned_resource_count_lower_bound(
         value.clone()
     };
     let conclusion = Proposition::condition_is(
-        crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+        crate::kernel::machine_integer::comparison::stored_logical_comparison(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
             [
-                MachineOperandView::Old(&quantity),
+                MachineOperandView::Old(quantity),
                 MachineOperandView::Old(&count),
             ],
+            false,
         ),
         true,
     );
+    if !proposition_holds_without_facts(&conclusion)
+        && !PureFactContext::settles_exactly(&checked_facts, &conclusion)
     {
         let reversed = Proposition::condition_is(
-            OldConditionTerm::signed_greater_equal(count, quantity),
+            StoredConditionTerm::signed_int32_at_least(&count, quantity),
             true,
         );
-        if !proposition_holds_without_facts(&conclusion)
-            && !PureFactContext::settles_exactly(&checked_facts, &conclusion)
-            && !checked_facts.proves_exact(&reversed)
-        {
+        if !checked_facts.proves_exact(&reversed) {
             return None;
         }
     }
     Some(conclusion)
+}
+
+pub(super) fn owned_quantity_nonnegative_claim(owned: &ResourceFact) -> Option<Proposition> {
+    let quantity = owned.owned_quantity_term()?;
+    let condition = crate::kernel::machine_integer::comparison::stored_logical_comparison(
+        MachineIntegerType::Int32,
+        CompareRelation::LessEqual,
+        [
+            MachineOperandView::Old(&OldMachineTerm::constant(0)),
+            MachineOperandView::Old(quantity),
+        ],
+        false,
+    );
+    Some(Proposition::condition_is(condition, true))
 }
 
 /// Certifies the nonnegativity invariant carried by an owned declared-resource
@@ -6838,18 +6852,7 @@ pub fn prove_owned_resource_quantity_nonnegative(
     if !state.resources().satisfies_fact(owned, assumptions) {
         return None;
     }
-    let quantity = owned.owned_quantity_term()?.clone();
-    let conclusion = Proposition::condition_is(
-        crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
-            MachineIntegerType::Int32,
-            CompareRelation::LessEqual,
-            [
-                MachineOperandView::Old(&OldMachineTerm::constant(0)),
-                MachineOperandView::Old(&quantity),
-            ],
-        ),
-        true,
-    );
+    let conclusion = owned_quantity_nonnegative_claim(owned)?;
     if claimed != &conclusion {
         return None;
     }

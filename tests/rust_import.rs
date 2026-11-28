@@ -4259,6 +4259,127 @@ fn charon_str_views_read_as_byte_slices() {
     }
 }
 
+const SLICE_RETURNS_SIDECAR: &str =
+    include_str!("fixtures/rust-verification/slice-returns/returns.click");
+
+// A function that returns `&[u8]`, `&mut [u8]` or `&str` returns one slice:
+// its contract reads `result.len()` and `result.as_ptr()`, a call passes the
+// result on, and a caller binds it as one slice local. A
+// claim about a length or a data pointer the slice does not have fails.
+#[test]
+fn charon_slice_returns_are_one_slice() {
+    let p = Project::from_fixture("tests/fixtures/rust-verification/slice-returns");
+    fs::write(p.root.join("borrow.click"), SLICE_RETURNS_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    ProgramVerificationSession::new_program_prepared(SLICE_RETURNS_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (function, before, after) in [
+        (
+            "slice_returns::whole",
+            "    ensures result.len() == bytes.len();\n    ensures result.as_ptr() == bytes.as_ptr();\n}\n\n// A call",
+            "    ensures result.len() == bytes.len() + 1;\n    ensures result.as_ptr() == bytes.as_ptr();\n}\n\n// A call",
+        ),
+        (
+            "slice_returns::passed",
+            "    ensures result.as_ptr() == bytes.as_ptr();\n}\n\n// A caller",
+            "    ensures result.as_ptr() == bytes.as_ptr() + 1;\n}\n\n// A caller",
+        ),
+        (
+            "slice_returns::measured",
+            "    ensures result == bytes.len();",
+            "    ensures result == bytes.len() + 1;",
+        ),
+        (
+            "slice_returns::same",
+            "    ensures result[0] == bytes[0];",
+            "    ensures result[0] == bytes[0] + 1;",
+        ),
+        (
+            "slice_returns::named",
+            "    ensures result.len() == s.len();",
+            "    ensures result.len() == s.len() + 1;",
+        ),
+        (
+            "slice_returns::first",
+            "    views *bytes;\n    ensures result == bytes[0];\n}\n",
+            "    views *bytes;\n    ensures result == bytes[0] + 1u8;\n}\n",
+        ),
+    ] {
+        assert!(SLICE_RETURNS_SIDECAR.contains(before), "{before}");
+        let invalid = SLICE_RETURNS_SIDECAR.replacen(before, after, 1);
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
+            .expect_err("a claim the slice result does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(function), "{rendered}");
+        // The slice local a recorded state held spells its data pointer as
+        // `view.as_ptr()`, which lowers, and its count as `view.len()`.
+        if function == "slice_returns::first" {
+            assert!(
+                rendered.contains("at(statement(0).exit, view.as_ptr()) == bytes.as_ptr()"),
+                "{rendered}"
+            );
+            assert!(
+                rendered.contains("at(statement(0).exit, view).len() == bytes.len()"),
+                "{rendered}"
+            );
+        }
+    }
+}
+
+const STR_BYTES_SIDECAR: &str = include_str!("fixtures/rust-verification/str-bytes/bytes.click");
+
+// `s.as_bytes()` calls the library's `str::as_bytes`, whose contract gives
+// the string's bytes as one byte slice with the same data pointer and
+// length: the code reads its length, and indexes it in bounds. A claim
+// about a length the view does not have fails, and so does an index into
+// a string that may be empty.
+#[test]
+fn charon_str_as_bytes_reads_the_same_bytes() {
+    let p = Project::from_fixture("tests/fixtures/rust-verification/str-bytes");
+    fs::write(p.root.join("borrow.click"), STR_BYTES_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    ProgramVerificationSession::new_program_prepared(STR_BYTES_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (function, before, after) in [
+        (
+            "str_bytes::byte_count",
+            "    ensures result == s.len();",
+            "    ensures result == s.len() + 1;",
+        ),
+        (
+            "str_bytes::first_byte",
+            "    requires 0u64 < s.len();\n",
+            "",
+        ),
+        (
+            "str_bytes::first_byte",
+            "    ensures result == click::rust::str::as_bytes(s)[0];",
+            "    ensures result == click::rust::str::as_bytes(s)[0] + 1u8;",
+        ),
+    ] {
+        assert!(STR_BYTES_SIDECAR.contains(before), "{before}");
+        let invalid = STR_BYTES_SIDECAR.replacen(before, after, 1);
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
+            .expect_err("a claim the byte view does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(function), "{rendered}");
+        // The refused index's condition counts the stored slice local by
+        // its own name, a spelling that lowers, not through its data
+        // pointer (`bytes.as_ptr().len()`).
+        if after.is_empty() {
+            assert!(
+                rendered.contains("could not show `0u64 < bytes.len()`"),
+                "{rendered}"
+            );
+            assert!(!rendered.contains("as_ptr().len()"), "{rendered}");
+        }
+    }
+}
+
 const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-take/take.click");
 
 // `o.take()` moves the option out and leaves `None`, for an option of a box,

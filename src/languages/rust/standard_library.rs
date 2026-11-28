@@ -113,6 +113,10 @@ const STR_LIBRARY: &str = include_str!("../../../library/rust/str.interface.clic
 const STR_METHODS: &[(&str, super::schema::Type)] = &[
     ("len", super::schema::Type::Usize),
     ("is_empty", super::schema::Type::Bool),
+    (
+        "as_bytes",
+        super::schema::Type::ByteSlice { mutable: false },
+    ),
 ];
 
 /// The result type of the `str` core method `method`, when the library

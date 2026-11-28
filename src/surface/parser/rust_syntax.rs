@@ -318,9 +318,27 @@ impl Parser {
         self.expect(Token::RParen)?;
         let parsed_return_type = if self.peek() == Some(&Token::Arrow) {
             self.position += 1;
-            let parsed = self.parse_rust_type()?;
-            self.record_rust_vec_param("result", parsed.interface_type);
-            parsed
+            // `-> &[T]` is one slice, as a slice parameter is
+            // (`design/rust-slice-values.md`, step 3c): the contract reads
+            // `result.len()`, `result[i]` and `result.as_ptr()`.
+            if let Some(slice_type) = self.take_rust_slice_value_type()? {
+                self.rust_slice_params.insert(
+                    "result".into(),
+                    slice_type == InterfaceType::Slice(crate::kernel::SliceElement::Str),
+                );
+                ParsedType {
+                    interface_type: slice_type,
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant: false,
+                    pointee_constant: false,
+                    reference: false,
+                }
+            } else {
+                let parsed = self.parse_rust_type()?;
+                self.record_rust_vec_param("result", parsed.interface_type);
+                parsed
+            }
         } else {
             ParsedType {
                 interface_type: InterfaceType::Void,

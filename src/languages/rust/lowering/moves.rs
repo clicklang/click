@@ -460,12 +460,25 @@ pub(super) fn lower(
                     if let Type::Record { name } = &f.return_type {
                         check(&mir.return_place, name)?;
                     }
-                    program_return(crate::kernel::program_expression::variable(
-                        cx.binding(&mir.return_place)?,
-                    ))
+                    let value =
+                        crate::kernel::program_expression::variable(cx.binding(&mir.return_place)?);
+                    // A body reads a `&str` as its bytes; it returns the
+                    // string slice (`design/rust-slice-values.md`, step 3c).
+                    program_return(if f.return_type == Type::StrSlice {
+                        crate::kernel::program_expression::cast(
+                            value,
+                            ProgramType::SlicePointer(crate::kernel::SliceElement::Str),
+                        )
+                    } else {
+                        value
+                    })
                 }
             }
             // The value MIR wrote to its return place, returned as written.
+            T::ReturnValue { value } if super::slice_program_type(&f.return_type)?.is_some() => {
+                let (checks, value) = cx.slice_operand(value, &f.return_type)?;
+                program_seq(checks, program_return(value))
+            }
             T::ReturnValue { value } => {
                 let (checks, value) = cx.prepared_expr(value)?;
                 let return_type = scalar_type(&f.return_type)?.to_kernel_type();
@@ -775,9 +788,7 @@ pub(super) fn lower(
                         call: *step,
                         function_name: function.clone(),
                         arguments: arguments_values,
-                        result_type: scalar_type(&callee.return_type)
-                            .ok()
-                            .map(|scalar| scalar.to_kernel_type()),
+                        result_type: super::value_program_type(&callee.return_type).ok(),
                         result_aggregate_layout: aggregate_layout,
                         result_pointee_constant: false,
                         dispatch: crate::kernel::CallDispatch::Direct,
@@ -808,6 +819,16 @@ pub(super) fn lower(
                             name: destination.clone(),
                         })?;
                         program_seq(call, program_typed_store(address, result, value_type))
+                    } else if callee.return_type == Type::StrSlice {
+                        // A body reads a returned `&str` as its bytes.
+                        let (call, result) = cx.call_value(function, arguments_values);
+                        program_seq(
+                            call,
+                            program_assign(
+                                cx.binding(destination)?,
+                                crate::kernel::program_expression::cast(result, super::BYTE_SLICE),
+                            ),
+                        )
                     } else {
                         cx.call_then_assign(destination, function, arguments_values)?
                     }
