@@ -263,6 +263,13 @@ fn preserve_field(
     crate::instrumentation::record_deterministic_work(2);
     let before = footprint.before_resources.owned_instance(field.identity)?;
     let after = footprint.after_resources.owned_instance(field.identity)?;
+    if let Some(a) = after.fields().integer_term(field.index) {
+        let b = before.fields().integer_term(field.index)?;
+        return Some(Proposition::condition_is(
+            StoredConditionTerm::integer_equal(a.into_shared(), b.into_shared()),
+            true,
+        ));
+    }
     let a = after.fields().get(field.index)?;
     let b = before.fields().get(field.index)?;
     let condition = match (a, b) {
@@ -275,10 +282,6 @@ fn preserve_field(
                 Term::Algebraic(b.clone().into()),
             ));
         }
-        (
-            crate::kernel::ResourceFieldValue::Integer(a),
-            crate::kernel::ResourceFieldValue::Integer(b),
-        ) => OldConditionTerm::integer_equal(a.clone(), b.clone()).into(),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(b)),
@@ -451,11 +454,10 @@ fn integer_equality(
             .into()
         }
         MachineIntegerType::Int128 | MachineIntegerType::UInt128 => {
-            OldConditionTerm::integer_equal(
-                IntegerTerm::from_machine(format, left)?,
-                IntegerTerm::from_machine(format, right)?,
+            StoredConditionTerm::integer_equal(
+                IntegerTerm::from_machine(format, left)?.into(),
+                IntegerTerm::from_machine(format, right)?.into(),
             )
-            .into()
         }
     })
 }
@@ -463,6 +465,40 @@ fn integer_equality(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preserved_wide_integer_equalities_keep_the_observation_format() {
+        use crate::kernel::{IntegerComparisonOperator, KernelTermNode, MachineIntegerConstant};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
+            let word = OldMachineTerm::Variable(Variable(983424));
+            let symbolic = integer_equality(format, word.clone(), word.clone()).unwrap();
+            let root = symbolic.root().unwrap();
+            assert!(!root.has_cached_native_argument());
+            let KernelTermNode::IntegerCompare {
+                operator: IntegerComparisonOperator::Equal,
+                arguments,
+            } = root.node()
+            else {
+                panic!("expected structural Integer equality");
+            };
+            assert_eq!(arguments[0], arguments[1]);
+            assert!(
+                matches!(arguments[0].node(), KernelTermNode::MachineObservation { format: ty, .. } if *ty == format)
+            );
+            let literal = |bits| {
+                OldMachineTerm::machine_constant(
+                    MachineIntegerConstant::from_bits(format.format(), bits).unwrap(),
+                )
+            };
+            for (right, expected) in [(1u128 << 127, true), (0, false)] {
+                let folded =
+                    integer_equality(format, literal(1u128 << 127), literal(right)).unwrap();
+                assert_eq!(folded.operand_view().constant(), Some(expected));
+            }
+            assert!(integer_equality(format, word, OldMachineTerm::constant(0)).is_none());
+        }
+    }
 
     #[test]
     fn promoted_preservation_reads_exact_widenings_without_exporting_the_goal() {

@@ -41,6 +41,11 @@ fn charge_binary_bits(left: &BigInt, right: &BigInt) {
     charge_integer_bits(right);
 }
 
+fn equal_integer_literals(left: &BigInt, right: &BigInt) -> bool {
+    charge_binary_bits(left, right);
+    left == right
+}
+
 fn charge_multiply_bits(left: &BigInt, right: &BigInt) {
     crate::instrumentation::record_deterministic_work(
         (left.bits() as usize + 1).saturating_mul(right.bits() as usize + 1),
@@ -2383,6 +2388,22 @@ fn fmt_integer_shared(
     fmt_integer_term(term.as_ref(), formatter, seen)
 }
 
+impl StoredConditionTerm {
+    pub(crate) fn integer_equal(left: SharedIntegerTerm, right: SharedIntegerTerm) -> Self {
+        let arguments = [left.0, right.0];
+        if let [
+            KernelTermNode::IntegerLiteral(a),
+            KernelTermNode::IntegerLiteral(b),
+        ] = arguments.each_ref().map(KernelTerm::node)
+        {
+            return Self::constant(equal_integer_literals(a, b));
+        }
+        let root = KernelTerm::integer_comparison(IntegerComparisonOperator::Equal, arguments)
+            .expect("Integer operands");
+        Self::from_root(root).expect("Integer equality")
+    }
+}
+
 impl OldConditionTerm {
     pub(crate) fn integer_less_than(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
@@ -2426,10 +2447,7 @@ impl OldConditionTerm {
 
     pub(crate) fn integer_equal(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
-            (Some(left), Some(right)) => {
-                charge_binary_bits(left, right);
-                Self::Constant(left == right)
-            }
+            (Some(left), Some(right)) => Self::Constant(equal_integer_literals(left, right)),
             _ => Self::IntegerEqual(left.into(), right.into()),
         }
     }
