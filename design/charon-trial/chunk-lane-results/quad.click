@@ -63,15 +63,49 @@ fn quad::walk(bytes: &[u8]) -> u32 {
                 have chunk == bytes + (16u64 - at(taken, iter.v.len()));
                 have chunk.len() == 4u64;
                 mark before;
+                step_until(statement(1).statement(0).region(7).entry);
+                step();
                 step_until(assignment(_byte, 0).entry);
                 have lanes.lanes[0] == at(before, chunk[0]);
-                have lanes.lanes[0] == chunk[0];
+                have separate(statement(1).statement(0).region(7).footprint, memory(chunk[0])) by close();
+                have at(statement(1).statement(0).region(7).exit, chunk[0]) == at(statement(1).statement(0).region(7).entry, chunk[0]) by {
+                    preserve(memory(chunk[0]), statement(1).statement(0).region(7));
+                }
+                have lanes.lanes[0] == chunk[0] by {
+                    have chunk[0] == at(before, chunk[0]) by close();
+                    rewrite(chunk[0], at(before, chunk[0]));
+                    close();
+                }
                 have lanes.lanes[1] == at(before, chunk[1]);
-                have lanes.lanes[1] == chunk[1];
+                have separate(statement(1).statement(0).region(7).footprint, memory(chunk[1])) by close();
+                have at(statement(1).statement(0).region(7).exit, chunk[1]) == at(statement(1).statement(0).region(7).entry, chunk[1]) by {
+                    preserve(memory(chunk[1]), statement(1).statement(0).region(7));
+                }
+                have lanes.lanes[1] == chunk[1] by {
+                    have chunk[1] == at(before, chunk[1]) by close();
+                    rewrite(chunk[1], at(before, chunk[1]));
+                    close();
+                }
                 have lanes.lanes[2] == at(before, chunk[2]);
-                have lanes.lanes[2] == chunk[2];
+                have separate(statement(1).statement(0).region(7).footprint, memory(chunk[2])) by close();
+                have at(statement(1).statement(0).region(7).exit, chunk[2]) == at(statement(1).statement(0).region(7).entry, chunk[2]) by {
+                    preserve(memory(chunk[2]), statement(1).statement(0).region(7));
+                }
+                have lanes.lanes[2] == chunk[2] by {
+                    have chunk[2] == at(before, chunk[2]) by close();
+                    rewrite(chunk[2], at(before, chunk[2]));
+                    close();
+                }
                 have lanes.lanes[3] == at(before, chunk[3]);
-                have lanes.lanes[3] == chunk[3];
+                have separate(statement(1).statement(0).region(7).footprint, memory(chunk[3])) by close();
+                have at(statement(1).statement(0).region(7).exit, chunk[3]) == at(statement(1).statement(0).region(7).entry, chunk[3]) by {
+                    preserve(memory(chunk[3]), statement(1).statement(0).region(7));
+                }
+                have lanes.lanes[3] == chunk[3] by {
+                    have chunk[3] == at(before, chunk[3]) by close();
+                    rewrite(chunk[3], at(before, chunk[3]));
+                    close();
+                }
 
                 have lanes.lanes[0] == chunk[0] as uint32;
                 have to_integer(lanes.lanes[0]) == to_integer(chunk[0] as int32) by { rewrite(lanes.lanes[0], chunk[0] as uint32); apply(quad_byte_observation(chunk[0])); close(); }
