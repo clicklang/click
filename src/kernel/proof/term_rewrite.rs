@@ -4156,7 +4156,7 @@ impl<'a> TermRewrite<'a> {
                 }
                 // Cited facts and exact Bool replacements use the whole written
                 // condition as a key before descending into its operands.
-                let condition = if self.conditions.is_none()
+                if self.conditions.is_none()
                     && self.cited_conditions.is_none()
                     && self.condition_exact.is_none()
                     && let Some(KernelTermNode::PointerEqual(pair)) =
@@ -4178,28 +4178,9 @@ impl<'a> TermRewrite<'a> {
                     if self.checked_work_exhausted() {
                         return exhausted_proposition();
                     }
-                    if let Some(reduced) = OldConditionTerm::reduced_pointer_equality(&left, &right)
-                    {
-                        self.finish_condition(reduced)
-                    } else {
-                        let proved = self
-                            .pointer_association_proven(left.equality_offset_sides(&right))
-                            || self.equality_graph.is_some_and(|graph| {
-                                self.graph_proves_pointer_equality(graph, &left, &right)
-                            });
-                        let root = if proved {
-                            KernelTerm::boolean_literal(true)
-                        } else {
-                            KernelTerm::pointer_equal_raw([left.into_shared(), right.into_shared()])
-                        };
-                        return Proposition::condition_is(
-                            StoredConditionTerm::from_root(root).expect("pointer equality"),
-                            *value,
-                        );
-                    }
-                } else {
-                    self.condition(condition.old_form())
-                };
+                    return self.pointer_equality_claim(left, right, *value);
+                }
+                let condition = self.condition(condition.old_form());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
@@ -6760,6 +6741,51 @@ impl<'a> TermRewrite<'a> {
         self.finish_condition(result)
     }
 
+    fn pointer_equality_claim(
+        &mut self,
+        left: Pointer,
+        right: Pointer,
+        truth: bool,
+    ) -> Proposition {
+        let root = match left.equality_kind(&right) {
+            PointerEqualityKind::IntegerAddress => {
+                let reduced = OldConditionTerm::integer_address_equality(&left, &right);
+                return self.finish_condition(reduced).truth_claim(truth);
+            }
+            PointerEqualityKind::Address => {
+                let (a, b) = (left.address(), right.address());
+                let comparison =
+                    KernelTerm::address_equal([a.shared().clone(), b.shared().clone()]);
+                if matches!(comparison.node(), KernelTermNode::AddressEqual { .. })
+                    && (self.pointer_association_proven(
+                        (a.base == b.base).then_some((&a.offset, &b.offset)),
+                    ) || self
+                        .equality_graph
+                        .is_some_and(|graph| graph.are_equal(a, b)))
+                {
+                    KernelTerm::boolean_literal(true)
+                } else {
+                    comparison
+                }
+            }
+            PointerEqualityKind::Complete => {
+                if self.pointer_association_proven(left.equality_offset_sides(&right))
+                    || self.equality_graph.is_some_and(|graph| {
+                        self.graph_proves_pointer_equality(graph, &left, &right)
+                    })
+                {
+                    KernelTerm::boolean_literal(true)
+                } else {
+                    KernelTerm::pointer_equal_raw([left.into_shared(), right.into_shared()])
+                }
+            }
+        };
+        Proposition::condition_is(
+            StoredConditionTerm::from_root(root).expect("pointer equality"),
+            truth,
+        )
+    }
+
     fn graph_proves_pointer_equality(
         &self,
         graph: &crate::kernel::equality_graph::EqualityGraph,
@@ -9035,6 +9061,54 @@ mod tests {
         ));
         assert_eq!(pointers(call), [address.clone(), address.clone()]);
         assert_eq!(pointers(nested), [address.clone(), address]);
+    }
+
+    #[test]
+    fn pointer_reduction_keeps_each_declarations_address() {
+        let _session = VerificationSession::enter();
+        let declarations = [
+            ("first", ProgramType::Int32),
+            ("second", ProgramType::Int64),
+        ];
+        let other = Pointer::new(
+            Address::symbolic(Variable(99832)),
+            ProgramType::Int32Pointer,
+        );
+        let results = declarations.map(|(name, ty)| {
+            let owner = LocalFunctionId::new(None, "pointer_reduction".into());
+            let binding = LocalBindingId::new(owner, false, 0, Some(name.into()));
+            binding.initialize_program_type(ty);
+            let local = other.clone().with_address(Address::new(
+                AddressBase::AutomaticLocal {
+                    binding,
+                    instance: LocalStorageInstance::Implicit,
+                },
+                AddressOffset::constant(0),
+            ));
+            let source =
+                KernelTerm::pointer_equal_raw([local.into_shared(), other.shared().clone()]);
+            let goal = Proposition::condition_is(
+                StoredConditionTerm::from_root(source.clone()).unwrap(),
+                false,
+            );
+            let Proposition::ConditionIs(result, false) = TermRewrite::empty().proposition(&goal)
+            else {
+                panic!("expected the rewritten negative claim");
+            };
+            assert!(!source.has_cached_native_argument());
+            result
+        });
+        for (result, (name, ty)) in results.iter().zip(declarations) {
+            assert!(!result.root().unwrap().has_cached_native_argument());
+            let [local, right] = result.operand_view().pointer_addresses().unwrap();
+            assert_eq!(right.export().unwrap(), *other.address());
+            let written = local.export().unwrap();
+            let AddressBase::AutomaticLocal { binding, .. } = &written.base else {
+                panic!("expected local address");
+            };
+            assert_eq!(binding.spelling(), Some(name));
+            assert_eq!(binding.program_type(), Some(ty));
+        }
     }
 
     #[test]
