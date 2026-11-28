@@ -505,11 +505,11 @@ fn integer_affine_claim_with_context(
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return None;
     }
-    if let OldConditionTerm::Constant(actual) = condition.old_form() {
+    if let Some(actual) = condition.operand_view().constant() {
         return Some(IntegerAffineClaim {
             relation: IntegerAffineRelation::Equal,
             terms: BTreeMap::new(),
-            constant: if *actual == value {
+            constant: if actual == value {
                 BigInt::zero()
             } else {
                 BigInt::one()
@@ -833,16 +833,11 @@ pub(crate) fn literal_integer_value(term: &crate::kernel::SharedIntegerTerm) -> 
 
 /// Literal arithmetic is builtin proof checking, not a lowering rewrite.
 /// Cached shape flags refuse symbolic operands in constant time.
-pub(crate) fn literal_integer_comparison_value(condition: &OldConditionTerm) -> Option<bool> {
-    let (left, right) = match condition {
-        OldConditionTerm::IntegerEqual(left, right)
-        | OldConditionTerm::IntegerNotEqual(left, right)
-        | OldConditionTerm::IntegerLessThan(left, right)
-        | OldConditionTerm::IntegerLessEqual(left, right)
-        | OldConditionTerm::IntegerGreaterThan(left, right)
-        | OldConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
-        _ => return None,
-    };
+pub(crate) fn literal_integer_comparison_value(
+    condition: crate::kernel::BooleanOperandView<'_>,
+) -> Option<bool> {
+    let (operator, [left, right]) =
+        crate::kernel::machine_integer::comparison::written_integer_comparison(condition)?;
     if !left.is_literal_arithmetic() || !right.is_literal_arithmetic() {
         return None;
     }
@@ -856,14 +851,13 @@ pub(crate) fn literal_integer_comparison_value(condition: &OldConditionTerm) -> 
     ) {
         return None;
     }
-    Some(match condition {
-        OldConditionTerm::IntegerEqual(..) => left == right,
-        OldConditionTerm::IntegerNotEqual(..) => left != right,
-        OldConditionTerm::IntegerLessThan(..) => left < right,
-        OldConditionTerm::IntegerLessEqual(..) => left <= right,
-        OldConditionTerm::IntegerGreaterThan(..) => left > right,
-        OldConditionTerm::IntegerGreaterEqual(..) => left >= right,
-        _ => unreachable!(),
+    Some(match operator {
+        IntegerComparisonOperator::Equal => left == right,
+        IntegerComparisonOperator::NotEqual => left != right,
+        IntegerComparisonOperator::LessThan => left < right,
+        IntegerComparisonOperator::LessEqual => left <= right,
+        IntegerComparisonOperator::GreaterThan => left > right,
+        IntegerComparisonOperator::GreaterEqual => left >= right,
     })
 }
 

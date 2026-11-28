@@ -217,6 +217,16 @@ pub(in crate::kernel) fn memory_effect_execution_facts(
     })
 }
 
+fn builtin_condition_value(condition: &crate::kernel::StoredConditionTerm) -> Option<bool> {
+    let view = condition.operand_view();
+    if view.is_integer_comparison() {
+        return crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(view);
+    }
+    view.closed_float_predicate_value().or_else(|| {
+        crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form())
+    })
+}
+
 pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
@@ -236,25 +246,8 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             ) == Some(true)
         }
         Proposition::Equal(left, right) => left == right,
-        Proposition::ConditionIs(condition, expected)
-            if let Some(actual) = condition.operand_view().closed_float_predicate_value() =>
-        {
-            actual == *expected
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, expected)
-            if let Some((OldConditionTerm::Constant(actual), _)) =
-                condition_source_0.old_condition() =>
-        {
-            actual == expected
-        }
         Proposition::ConditionIs(condition, expected) => {
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form())
-                .or_else(|| {
-                    crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
-                        condition.old_form(),
-                    )
-                })
-                .is_some_and(|actual| actual == *expected)
+            builtin_condition_value(condition).is_some_and(|actual| actual == *expected)
         }
         Proposition::And(left, right) => solve_builtin_prop(left) && solve_builtin_prop(right),
         Proposition::Or(left, right) => solve_builtin_prop(left) || solve_builtin_prop(right),
@@ -307,25 +300,8 @@ pub(in crate::kernel) fn conjunction_order_facts_are_inconsistent(
 
 pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
-        Proposition::ConditionIs(condition, expected)
-            if let Some(actual) = condition.operand_view().closed_float_predicate_value() =>
-        {
-            actual != *expected
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, expected)
-            if let Some((OldConditionTerm::Constant(actual), _)) =
-                condition_source_0.old_condition() =>
-        {
-            actual != expected
-        }
         Proposition::ConditionIs(condition, expected) => {
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form())
-                .or_else(|| {
-                    crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
-                        condition.old_form(),
-                    )
-                })
-                .is_some_and(|actual| actual != *expected)
+            builtin_condition_value(condition).is_some_and(|actual| actual != *expected)
         }
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
             sequence_terms_definitely_distinct(left, right)

@@ -5968,7 +5968,7 @@ fn listed_premise_holds_with(
         // symbolic operands from cached shape flags and uses only the named
         // expression's shared DAG, never the available-fact collection.
         || matches!(premise, Proposition::ConditionIs(condition, expected)
-            if crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition.old_form())
+            if crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition.operand_view())
                 == Some(*expected))
         || holds_by_format_range(premise)
         || available(premise)

@@ -353,3 +353,25 @@ fn opaque_call_observation_borrows_the_written_argument_slot() {
         assert!(!root.has_cached_native_argument());
     }
 }
+
+#[test]
+fn literal_integer_comparison_reads_a_written_integer_argument() {
+    let literal = SharedIntegerTerm::from_root(KernelTerm::integer_literal(7.into()));
+    let source = SharedPureApplication::intern(
+        "integer_input".into(),
+        vec![PureFunctionArgument::Integer(literal.clone())],
+    );
+    let wrapped = KernelTerm::written_call_argument(&source, 0);
+    let root = KernelTerm::integer_comparison(
+        IntegerComparisonOperator::Equal,
+        [wrapped, literal.root().clone()],
+    )
+    .unwrap();
+    assert_eq!(
+        crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
+            BooleanOperandView::Shared(&root)
+        ),
+        Some(true)
+    );
+    assert!(!root.has_cached_native_argument());
+}

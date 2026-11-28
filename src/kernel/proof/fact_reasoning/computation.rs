@@ -516,9 +516,11 @@ fn condition_value(condition: &OldConditionTerm) -> Option<bool> {
                     _ => unreachable!(),
                 });
             }
-            super::super::integer_arithmetic::literal_integer_comparison_value(condition)
-                .or_else(|| integer_affine_comparison(condition))
-                .or_else(|| integer_operation_bound_comparison(condition))
+            super::super::integer_arithmetic::literal_integer_comparison_value(
+                BooleanOperandView::Native(condition),
+            )
+            .or_else(|| integer_affine_comparison(condition))
+            .or_else(|| integer_operation_bound_comparison(condition))
         }
         OldConditionTerm::Compare {
             format,
