@@ -1786,7 +1786,9 @@ impl Context<'_> {
         if left.name == right.name {
             return Err("split_at results require distinct slice slots".into());
         }
-        if !self.shared_byte_slice(slice) {
+        let shared_reborrow = matches!(slice, E::Borrow { .. })
+            && shared_slice_local(slice).is_some_and(|name| self.slices.contains_key(name));
+        if !self.shared_byte_slice(slice) && !shared_reborrow {
             return Err("split_at requires a shared byte-slice local".into());
         }
         let (pointer, length) = self.slice_parts(slice)?;
