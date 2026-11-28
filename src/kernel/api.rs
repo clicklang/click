@@ -6817,7 +6817,7 @@ pub fn checked_owned_resource_count_lower_bound(
         && !PureFactContext::settles_exactly(&checked_facts, &conclusion)
     {
         let reversed = Proposition::condition_is(
-            OldConditionTerm::signed_greater_equal(count, quantity.clone()),
+            StoredConditionTerm::signed_int32_at_least(&count, quantity),
             true,
         );
         if !checked_facts.proves_exact(&reversed) {

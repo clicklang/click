@@ -193,6 +193,14 @@ pub(in crate::kernel) struct SymbolicPopulationCount {
 }
 
 impl SymbolicPopulationCount {
+    pub(in crate::kernel) fn entry_lower_bound(&self) -> crate::kernel::Proposition {
+        let numerical = OldMachineTerm::constant(self.entry_owned_members);
+        let owned = self.entry_symbolic_members.as_ref().unwrap_or(&numerical);
+        let bound =
+            crate::kernel::StoredConditionTerm::signed_int32_at_least(&self.entry_count, owned);
+        crate::kernel::Proposition::condition_is(bound, true)
+    }
+
     /// Preserve both components of a checked symbolic birth followed by
     /// numerical births. Other mixed directions are not admitted by the ledger.
     pub(in crate::kernel) fn combined_delta(&self) -> Option<(bool, OldMachineTerm)> {
