@@ -4076,12 +4076,19 @@ pub(super) fn decode_crate(
                 .map(|statement| statement.path.clone())
                 .collect(),
             name: name.clone(),
-            return_type: adapter.ty(&f.signature.output).map_err(|error| {
-                format!(
-                    "{} in {name}: {error}",
-                    refusal_location(&krate, source, f.item_meta.span, f.item_meta.span)
-                )
-            })?,
+            // A `&str` result is a string slice, not the bytes the body
+            // reads it as.
+            return_type: match f.signature.output.kind() {
+                a::TyKind::Ref(_, pointee, a::RefKind::Shared) if str_type(pointee) => {
+                    Type::StrSlice
+                }
+                _ => adapter.ty(&f.signature.output).map_err(|error| {
+                    format!(
+                        "{} in {name}: {error}",
+                        refusal_location(&krate, source, f.item_meta.span, f.item_meta.span)
+                    )
+                })?,
+            },
             parameters,
             body: vec![],
             mir: Some(out::MirBody {

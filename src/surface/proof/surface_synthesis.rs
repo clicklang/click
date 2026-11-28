@@ -7932,9 +7932,11 @@ fn call_result_pointer_expression(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
+    // A slice result names its data pointer only as `R.as_ptr()`
+    // (`slices::slice_data_pointer`).
     if let Some(expression) = state_call_result(
         state,
-        |value| matches!(value, ProgramValue::Pointer(held) if held.address() == pointer),
+        |value| matches!(value, ProgramValue::Pointer(held) if held.address() == pointer && !held.is_wide()),
     ) {
         return Some(expression);
     }

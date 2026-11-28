@@ -4259,6 +4259,58 @@ fn charon_str_views_read_as_byte_slices() {
     }
 }
 
+const SLICE_RETURNS_SIDECAR: &str =
+    include_str!("fixtures/rust-verification/slice-returns/returns.click");
+
+// A function that returns `&[u8]`, `&mut [u8]` or `&str` returns one slice:
+// its contract reads `result.len()` and `result.as_ptr()`, a call passes the
+// result on, and a caller binds it as one slice local. A
+// claim about a length or a data pointer the slice does not have fails.
+#[test]
+fn charon_slice_returns_are_one_slice() {
+    let p = Project::from_fixture("tests/fixtures/rust-verification/slice-returns");
+    fs::write(p.root.join("borrow.click"), SLICE_RETURNS_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    ProgramVerificationSession::new_program_prepared(SLICE_RETURNS_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (function, before, after) in [
+        (
+            "slice_returns::whole",
+            "    ensures result.len() == bytes.len();\n    ensures result.as_ptr() == bytes.as_ptr();\n}\n\n// A call",
+            "    ensures result.len() == bytes.len() + 1;\n    ensures result.as_ptr() == bytes.as_ptr();\n}\n\n// A call",
+        ),
+        (
+            "slice_returns::passed",
+            "    ensures result.as_ptr() == bytes.as_ptr();\n}\n\n// A caller",
+            "    ensures result.as_ptr() == bytes.as_ptr() + 1;\n}\n\n// A caller",
+        ),
+        (
+            "slice_returns::measured",
+            "    ensures result == bytes.len();",
+            "    ensures result == bytes.len() + 1;",
+        ),
+        (
+            "slice_returns::same",
+            "    ensures result[0] == bytes[0];",
+            "    ensures result[0] == bytes[0] + 1;",
+        ),
+        (
+            "slice_returns::named",
+            "    ensures result.len() == s.len();",
+            "    ensures result.len() == s.len() + 1;",
+        ),
+    ] {
+        assert!(SLICE_RETURNS_SIDECAR.contains(before), "{before}");
+        let invalid = SLICE_RETURNS_SIDECAR.replacen(before, after, 1);
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
+            .expect_err("a claim the slice result does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(function), "{rendered}");
+    }
+}
+
 const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-take/take.click");
 
 // `o.take()` moves the option out and leaves `None`, for an option of a box,
