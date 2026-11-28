@@ -534,6 +534,23 @@ impl StoredConditionTerm {
         )))
     }
 
+    /// A signed count bound folds two literal words and keeps the written
+    /// direction for exact fact lookup otherwise.
+    pub(in crate::kernel) fn signed_int32_at_least(
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
+    ) -> Self {
+        let format = MachineIntegerType::Int32;
+        let mut import = KernelTermImport::for_exact_field_inputs();
+        let operands = [left, right].map(|operand| import.machine(format, operand));
+        Self::from_root(KernelTerm::boolean_comparison(
+            format,
+            CompareRelation::GreaterEqual,
+            operands,
+        ))
+        .expect("signed int32 comparison")
+    }
+
     pub(crate) fn constant(value: bool) -> Self {
         Self(StoredCondition::Shared(KernelTerm::boolean_literal(value)))
     }

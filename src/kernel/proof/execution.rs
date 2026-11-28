@@ -1598,17 +1598,8 @@ impl CheckedResourceRewrite {
         }
         let mut evaluation_assumptions = assumptions.clone();
         for imported in imported_counts.into_iter().flatten() {
-            let bound = Proposition::condition_is(
-                crate::kernel::OldConditionTerm::signed_greater_equal(
-                    imported.entry_count,
-                    imported
-                        .entry_symbolic_members
-                        .clone()
-                        .unwrap_or(OldMachineTerm::constant(imported.entry_owned_members)),
-                ),
-                true,
-            );
-            evaluation_assumptions = evaluation_assumptions.assume_proposition(bound);
+            evaluation_assumptions =
+                evaluation_assumptions.assume_proposition(imported.entry_lower_bound());
         }
         let mut budget = ExecutionBudget::beside_live_state();
         for (index, source) in definition.facts().iter().enumerate() {
