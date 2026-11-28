@@ -717,11 +717,15 @@ fn stored_numeric_root(value: &ExecutionValue) -> Option<&KernelTerm> {
     .then_some(root)
 }
 
+fn collect_numeric_program_carriers(root: &KernelTerm, variables: &mut CarrierVariables) {
+    if variables.visit() {
+        collect_numeric_carriers(std::slice::from_ref(root), variables);
+    }
+}
+
 fn collect_stored_program_carriers(value: &StoredProgramValue, variables: &mut CarrierVariables) {
     if let Some(root) = stored_numeric_root(value.value()) {
-        if variables.visit() {
-            collect_numeric_carriers(std::slice::from_ref(root), variables);
-        }
+        collect_numeric_program_carriers(root, variables);
     } else {
         collect_program_value_carriers(value.old_form(), variables);
     }
@@ -1649,24 +1653,37 @@ fn collect_offset_node_carriers(
 }
 
 fn collect_sequence_carriers(term: &SequenceTerm, variables: &mut CarrierVariables) {
-    if !variables.visit() {
-        return;
-    }
-    match term.node.as_ref() {
-        SequenceTermNode::Literal(values) => {
-            for value in values.iter() {
-                collect_program_value_carriers(value, variables);
-                if variables.exhausted() {
-                    return;
+    let mut pending = vec![term];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(term) = pending.pop() {
+        // The sequence owns these immutable nodes for the whole walk.
+        // Pointer queries return occurrences, including repeated concatenands.
+        if variables.pointer_terms.is_none() && !seen.insert(std::sync::Arc::as_ptr(&term.node)) {
+            continue;
+        }
+        if !variables.visit() {
+            return;
+        }
+        match term.node.as_ref() {
+            SequenceTermNode::Literal(values) => {
+                for index in 0..values.len() {
+                    if let Some(root) = values
+                        .retained_value_ref(index)
+                        .and_then(stored_numeric_root)
+                    {
+                        collect_numeric_program_carriers(root, variables);
+                    } else {
+                        collect_program_value_carriers(
+                            values.get(index).expect("sequence element"),
+                            variables,
+                        );
+                    }
+                    if variables.exhausted() {
+                        return;
+                    }
                 }
             }
-        }
-        SequenceTermNode::Concat(left, right) => {
-            collect_sequence_carriers(left, variables);
-            if variables.exhausted() {
-                return;
-            }
-            collect_sequence_carriers(right, variables);
+            SequenceTermNode::Concat(left, right) => pending.extend([right, left]),
         }
     }
 }
@@ -8661,6 +8678,51 @@ mod tests {
             vec![a.clone(), b.clone(), a, b]
         );
         assert!(!root.has_cached_native_argument());
+    }
+
+    #[test]
+    fn sequence_carriers_preserve_read_order_across_native_and_retained_literals() {
+        let _session = VerificationSession::enter();
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let a = Address::symbolic(Variable(9916));
+        let b = Address::symbolic(Variable(9917));
+        let read_a = OldMachineTerm::read_named(point.clone(), a.clone(), LoadKind::Int32);
+        let read_b = KernelTerm::shared_scalar_read_descriptor(
+            MachineIntegerType::Int32,
+            &point,
+            b.shared(),
+            LoadKind::Int32,
+        );
+        let sequence = |node| SequenceTerm {
+            element_type: Some(ProgramType::Int32),
+            node: std::sync::Arc::new(node),
+        };
+        let native = sequence(SequenceTermNode::Literal(
+            [ProgramValue::Int32(read_a.clone())].into(),
+        ));
+        let retained = sequence(SequenceTermNode::Literal(SequenceValues::from_values([
+            ExecutionValue::Shared(read_b.clone()),
+        ])));
+        let pair = sequence(SequenceTermNode::Concat(native, retained));
+        let fact = Proposition::Predicate {
+            name: "mixed_sequence".into(),
+            arguments: vec![Term::Sequence(sequence(SequenceTermNode::Concat(
+                pair.clone(),
+                pair,
+            )))],
+        };
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            [a.clone(), b.clone(), a, b.clone()]
+        );
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect_read_terms();
+        collector.collect(&fact);
+        let reads = collector.take_read_terms().collect::<Vec<_>>();
+        assert_eq!(reads.len(), 2);
+        assert!(reads.contains(&read_a));
+        assert!(reads.contains(&OldMachineTerm::read_named(point, b, LoadKind::Int32)));
+        assert!(!read_b.has_cached_native_argument());
     }
 
     #[test]
