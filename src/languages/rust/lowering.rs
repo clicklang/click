@@ -1410,7 +1410,8 @@ fn lower_function(
 }
 /// The declared type of each local the lowering binds by its spelling
 /// alone: a source name bound once, which is no repeated name's and no
-/// parameter's. A local of a type with no scalar form has none.
+/// parameter's: a slice's wide pointer type, or a scalar's type. A local of
+/// another type has none.
 fn spelled_local_types(f: &super::schema::Function) -> BTreeMap<String, ProgramType> {
     let Some(mir) = &f.mir else {
         return BTreeMap::new();
@@ -1422,10 +1423,7 @@ fn spelled_local_types(f: &super::schema::Function) -> BTreeMap<String, ProgramT
             let MirLocalId::Source(name) = &local.name else {
                 return None;
             };
-            Some((
-                name.clone(),
-                scalar_type(&local.value_type).ok()?.to_kernel_type(),
-            ))
+            Some((name.clone(), value_program_type(&local.value_type).ok()?))
         })
         .collect()
 }
