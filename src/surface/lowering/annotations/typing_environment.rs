@@ -302,6 +302,14 @@ impl<'a> TypingEnvironment<'a> {
         inner
     }
 
+    /// Whether a binder of the term being typed declares `name`.
+    pub(super) fn declares<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> bool {
+        self.binders.get(name).is_some()
+    }
+
     /// The type a name has here.
     pub(super) fn binding_click_type<Q: crate::surface::binders::BinderKey + ?Sized>(
         &self,

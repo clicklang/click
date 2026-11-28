@@ -129,6 +129,10 @@ pub struct ImportedFunction {
     /// (the loops in preorder): the state a proof names `iter` in that loop
     /// and `loop(i).iter` elsewhere.
     pub(super) loop_iterators: Vec<Option<RustLoopIterator>>,
+    /// For a C function, the declarations visible at the end of its body,
+    /// before its closing brace: the scope of a proof clause after its last
+    /// statement, where no statement's site gives one.
+    pub(super) body_end_scope: Option<crate::languages::c::syntax::CSourceBindings>,
     /// For a front end that lowers its own body, the statements as written
     /// each region of that body comes from.
     pub(super) source_sites: Option<std::sync::Arc<SourceSites>>,
@@ -875,6 +879,7 @@ impl ImportedFunction {
             local_pointers: BTreeSet::new(),
             string_literals: Vec::new(),
             loop_iterators: Vec::new(),
+            body_end_scope: None,
             source_sites: None,
         }
     }
@@ -1128,6 +1133,12 @@ impl ImportedFunction {
     pub(crate) fn with_loop_iterators(mut self, iterators: Vec<Option<RustLoopIterator>>) -> Self {
         self.loop_iterators = iterators;
         self
+    }
+
+    /// The declarations visible at the end of a C function's body; see the
+    /// field.
+    pub(crate) fn body_end_scope(&self) -> Option<&crate::languages::c::syntax::CSourceBindings> {
+        self.body_end_scope.as_ref()
     }
 
     /// The iterator each loop advances, by loop index, for a Rust function.

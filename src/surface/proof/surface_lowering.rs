@@ -374,6 +374,19 @@ impl<'a> Proof<'a> {
                 );
                 let pre_state =
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
+                #[cfg(debug_assertions)]
+                let _front_end_scope = crate::surface::lowering::ProofClauseScope::enter(
+                    context.parsed_function,
+                    context
+                        .constants
+                        .source_layout
+                        .site(execution.core.frontier.next_statement_index)
+                        // Past the last statement, the body's end scope.
+                        .map_or_else(
+                            || context.parsed_function.body_end_scope(),
+                            |site| site.scope(),
+                        ),
+                );
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
                     self.facts().assumptions(),
@@ -539,6 +552,19 @@ impl<'a> Proof<'a> {
                 );
                 let pre_state =
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
+                #[cfg(debug_assertions)]
+                let _front_end_scope = crate::surface::lowering::ProofClauseScope::enter(
+                    context.parsed_function,
+                    context
+                        .constants
+                        .source_layout
+                        .site(execution.core.frontier.next_statement_index)
+                        // Past the last statement, the body's end scope.
+                        .map_or_else(
+                            || context.parsed_function.body_end_scope(),
+                            |site| site.scope(),
+                        ),
+                );
                 lower_fixed_state_proposition_with_proof_locals(
                     &surface,
                     self.facts().assumptions(),
