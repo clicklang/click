@@ -83,6 +83,7 @@ impl StoredConditionTerm {
         format: MachineIntegerType,
         left: OldMachineTerm,
         right: OldMachineTerm,
+        in_conditional: bool,
     ) -> Self {
         use crate::kernel::machine_integer::comparison::retained_comparison_operands;
         debug_assert_eq!(format.format().bits(), 64);
@@ -90,7 +91,8 @@ impl StoredConditionTerm {
             MachineOperandView::Old(&left),
             MachineOperandView::Old(&right),
         ];
-        let words = if let Some(words) = retained_comparison_operands(format, views, false) {
+        let words = if let Some(words) = retained_comparison_operands(format, views, in_conditional)
+        {
             words
         } else if left == right {
             [left, right]

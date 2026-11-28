@@ -312,12 +312,52 @@ pub(crate) fn logical_condition_for_operand_views(
     logical_comparison(format, relation, operands, false)
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn logical_conditional_guard_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> OldConditionTerm {
     logical_comparison(format, relation, operands, true)
+}
+
+/// Construct the logical comparison selected by specification lowering, keeping
+/// the written operand formats for exact rewriting and condition export.
+pub(in crate::kernel) fn stored_logical_comparison(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+    in_conditional: bool,
+) -> crate::kernel::StoredConditionTerm {
+    use crate::kernel::{
+        CompareRelation, KernelTermImport, MachineOperandView, StoredConditionTerm,
+    };
+    if format.format().bits() == 64
+        && relation == CompareRelation::Equal
+        && let [
+            MachineOperandView::Old(left),
+            MachineOperandView::Old(right),
+        ] = operands
+    {
+        return StoredConditionTerm::logical_word64_equality(
+            format,
+            left.clone(),
+            right.clone(),
+            in_conditional,
+        );
+    }
+    if let Some(words) = retained_comparison_operands(format, operands, in_conditional) {
+        let (format, words) = retained_compare_words(format, relation, words);
+        let mut import = KernelTermImport::for_exact_field_inputs();
+        let arguments = words.each_ref().map(|word| import.machine(format, word));
+        return StoredConditionTerm::from_root(KernelTerm::boolean_comparison_raw(
+            format, relation, arguments,
+        ))
+        .expect("logical machine comparison");
+    }
+    StoredConditionTerm::from_minted(condition_for_operand_views_in(
+        format, relation, operands, true,
+    ))
 }
 
 fn logical_comparison(
@@ -377,12 +417,26 @@ fn retained_compare(
     left: OldMachineTerm,
     right: OldMachineTerm,
 ) -> OldConditionTerm {
+    let (format, [left, right]) = retained_compare_words(format, relation, [left, right]);
+    OldConditionTerm::Compare {
+        format,
+        relation,
+        left: Box::new(left),
+        right: Box::new(right),
+    }
+}
+
+fn retained_compare_words(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    words: [OldMachineTerm; 2],
+) -> (MachineIntegerType, [OldMachineTerm; 2]) {
     // Native 32-bit comparisons read sign-free words; their format carries
     // the signedness. Keep the same operand representation as exact rewriting.
-    let [left, right] = if format.format().bits() == 32 {
-        [left.into_word32(), right.into_word32()]
+    let words = if format.format().bits() == 32 {
+        words.map(OldMachineTerm::into_word32)
     } else {
-        [left, right]
+        words
     };
     // Wide equality compares words, and its established native filing
     // format is Int64 even when the literal operands are unsigned
@@ -393,12 +447,7 @@ fn retained_compare(
         } else {
             format
         };
-    OldConditionTerm::Compare {
-        format,
-        relation,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
+    (format, words)
 }
 
 /// Whether logical lowering retained a comparison containing a bounded machine

@@ -259,17 +259,14 @@ impl SpecValue {
                     op != ComparisonOperator::NotEqual,
                 )));
             }
-            let condition = if conditional_guard {
-                comparison::logical_conditional_guard_for_operand_views(
-                    format,
-                    relation,
-                    [left, right],
-                )
-            } else {
-                comparison::logical_condition_for_operand_views(format, relation, [left, right])
-            };
+            let condition = comparison::stored_logical_comparison(
+                format,
+                relation,
+                [left, right],
+                conditional_guard,
+            );
             return Ok(Some(Proposition::condition_is(
-                StoredConditionTerm::from_minted(condition),
+                condition,
                 op != ComparisonOperator::NotEqual,
             )));
         }
@@ -424,15 +421,19 @@ fn retained_word_comparison(
         ComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
         ComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
     };
-    let condition = crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+    let condition = crate::kernel::machine_integer::comparison::stored_logical_comparison(
         format,
         relation,
         [
             crate::kernel::MachineOperandView::Old(&left),
             crate::kernel::MachineOperandView::Old(&right),
         ],
+        false,
     );
-    (!matches!(condition, OldConditionTerm::Constant(_)))
+    condition
+        .operand_view()
+        .constant()
+        .is_none()
         .then(|| Proposition::condition_is(condition, op != ComparisonOperator::NotEqual))
 }
 
@@ -708,6 +709,42 @@ mod condition_output_tests {
                         assert_eq!(condition.old_form(), &expected);
                     }
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn retained_literal_comparisons_build_exact_roots_without_caching_a_condition() {
+        use crate::kernel::machine_integer::comparison::logical_condition_for_operand_views;
+        for format in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
+            for guard in [false, true] {
+                for (operator, relation) in [
+                    (ComparisonOperator::NotEqual, CompareRelation::Equal),
+                    (ComparisonOperator::LessThan, CompareRelation::LessThan),
+                ] {
+                    let _session = crate::kernel::VerificationSession::enter();
+                    let word = |bits| match format {
+                        MachineIntegerType::UInt32 => OldMachineTerm::uint32_constant(bits as u32),
+                        _ => OldMachineTerm::uint64_constant(bits),
+                    };
+                    let left = SpecValue::Native(format.value_from_term(word(7)));
+                    let right = SpecValue::Native(format.value_from_term(word(9)));
+                    let expected = logical_condition_for_operand_views(
+                        format,
+                        relation,
+                        [left.machine().unwrap().1, right.machine().unwrap().1],
+                    );
+                    let Proposition::ConditionIs(stored, truth) = left
+                        .comparison_in(operator, &right, guard)
+                        .unwrap()
+                        .unwrap()
+                    else {
+                        panic!("expected a retained comparison")
+                    };
+                    assert!(!stored.root().unwrap().has_cached_native_argument());
+                    assert_eq!(stored.old_form(), &expected);
+                    assert_eq!(truth, operator != ComparisonOperator::NotEqual);
                 }
             }
         }
