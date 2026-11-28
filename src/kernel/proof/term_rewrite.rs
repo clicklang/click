@@ -4171,11 +4171,32 @@ impl<'a> TermRewrite<'a> {
                         return exhausted_proposition();
                     }
                     let [left, right] = pair.arguments();
-                    let result = self.rewrite_pointer_equality(
+                    let [left, right] = self.rewrite_pointer_operands(
                         left.export().expect("written pointer operand"),
                         right.export().expect("written pointer operand"),
                     );
-                    self.finish_condition(result)
+                    if self.checked_work_exhausted() {
+                        return exhausted_proposition();
+                    }
+                    if let Some(reduced) = OldConditionTerm::reduced_pointer_equality(&left, &right)
+                    {
+                        self.finish_condition(reduced)
+                    } else {
+                        let proved = self
+                            .pointer_association_proven(left.equality_offset_sides(&right))
+                            || self.equality_graph.is_some_and(|graph| {
+                                self.graph_proves_pointer_equality(graph, &left, &right)
+                            });
+                        let root = if proved {
+                            KernelTerm::boolean_literal(true)
+                        } else {
+                            KernelTerm::pointer_equal_raw([left.into_shared(), right.into_shared()])
+                        };
+                        return Proposition::condition_is(
+                            StoredConditionTerm::from_root(root).expect("pointer equality"),
+                            *value,
+                        );
+                    }
                 } else {
                     self.condition(condition.old_form())
                 };
@@ -6487,7 +6508,7 @@ impl<'a> TermRewrite<'a> {
             })
     }
 
-    fn rewrite_pointer_equality(&mut self, left: Pointer, right: Pointer) -> OldConditionTerm {
+    fn rewrite_pointer_operands(&mut self, left: Pointer, right: Pointer) -> [Pointer; 2] {
         let mut rewrite = |pointer| {
             let ProgramValue::Pointer(value) = self.value(&ProgramValue::Pointer(pointer)) else {
                 unreachable!()
@@ -6504,7 +6525,7 @@ impl<'a> TermRewrite<'a> {
                 OldMachineTerm::clone,
             )
         };
-        OldConditionTerm::pointer_equal(canonical(left), canonical(right))
+        [canonical(left), canonical(right)]
     }
 
     fn begin_condition_visit(&mut self) -> bool {
@@ -6628,7 +6649,8 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             OldConditionTerm::PointerEqual(a, b) => {
-                self.rewrite_pointer_equality((**a).clone(), (**b).clone())
+                let [left, right] = self.rewrite_pointer_operands((**a).clone(), (**b).clone());
+                OldConditionTerm::pointer_equal(left, right)
             }
             OldConditionTerm::AddressEqual(a, b) => {
                 OldConditionTerm::AddressEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
@@ -6738,29 +6760,27 @@ impl<'a> TermRewrite<'a> {
         self.finish_condition(result)
     }
 
-    fn finish_condition(&mut self, result: OldConditionTerm) -> OldConditionTerm {
-        // Comparison forms are lookup aids, not stored syntax. Replacing a
-        // read can expose a literal machine comparison; preserve the old
-        // substitution path's constant result without simplifying symbolic
-        // operands or revisiting an arithmetic prefix.
-        if self.comparison_reads.is_some()
-            && let OldConditionTerm::Compare {
-                format,
-                relation,
-                left,
-                right,
-            } = &result
-            && matches!(left.as_ref(), OldMachineTerm::Constant { .. })
-            && matches!(right.as_ref(), OldMachineTerm::Constant { .. })
-        {
-            return OldConditionTerm::machine_compare(
-                *format,
-                *relation,
-                left.as_ref().clone(),
-                right.as_ref().clone(),
-            );
-        }
-        if let Some([left, right]) = result.pointer_offset_association_guard() {
+    fn graph_proves_pointer_equality(
+        &self,
+        graph: &crate::kernel::equality_graph::EqualityGraph,
+        left: &Pointer,
+        right: &Pointer,
+    ) -> bool {
+        let matches = self.pointer_context.map_or_else(
+            || left.same_provenance_as(right),
+            |context| context.pointer_provenance_match(left, right),
+        );
+        // Address equality decides only pointers whose metadata
+        // already agrees; a wide pair needs its counts too.
+        matches && left.same_metadata_as(right) && graph.are_equal(left.address(), right.address())
+    }
+
+    fn pointer_association_proven(
+        &mut self,
+        offsets: Option<(&AddressOffset, &AddressOffset)>,
+    ) -> bool {
+        let Some((a, b)) = offsets else { return false };
+        if let Some([left, right]) = a.int32_association_guard(b) {
             if let Some(conditions) = &mut self.collected_conditions {
                 // Planner output: the public guard carrier still owns native
                 // operands. Checking below never constructs this output.
@@ -6832,10 +6852,10 @@ impl<'a> TermRewrite<'a> {
                 false
             };
             if known_false {
-                return OldConditionTerm::Constant(true);
+                return true;
             }
         }
-        if let Some(guard) = result.pointer_offset_uint64_association_guard() {
+        if let Some(guard) = a.uint64_association_guard(b) {
             if let Some(conditions) = &mut self.collected_conditions {
                 conditions.push(guard.clone());
             }
@@ -6845,8 +6865,36 @@ impl<'a> TermRewrite<'a> {
                     .conditions
                     .is_some_and(|conditions| conditions.get(&guard) == Some(&true))
             {
-                return OldConditionTerm::Constant(true);
+                return true;
             }
+        }
+        false
+    }
+
+    fn finish_condition(&mut self, result: OldConditionTerm) -> OldConditionTerm {
+        // Comparison forms are lookup aids, not stored syntax. Replacing a
+        // read can expose a literal machine comparison; preserve the old
+        // substitution path's constant result without simplifying symbolic
+        // operands or revisiting an arithmetic prefix.
+        if self.comparison_reads.is_some()
+            && let OldConditionTerm::Compare {
+                format,
+                relation,
+                left,
+                right,
+            } = &result
+            && matches!(left.as_ref(), OldMachineTerm::Constant { .. })
+            && matches!(right.as_ref(), OldMachineTerm::Constant { .. })
+        {
+            return OldConditionTerm::machine_compare(
+                *format,
+                *relation,
+                left.as_ref().clone(),
+                right.as_ref().clone(),
+            );
+        }
+        if self.pointer_association_proven(result.pointer_offset_sides()) {
+            return OldConditionTerm::Constant(true);
         }
         if let OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
@@ -6927,15 +6975,7 @@ impl<'a> TermRewrite<'a> {
             OldConditionTerm::Constant(false)
         } else if self.equality_graph.is_some_and(|graph| match &result {
             OldConditionTerm::PointerEqual(left, right) => {
-                let matches = self.pointer_context.map_or_else(
-                    || left.same_provenance_as(right),
-                    |context| context.pointer_provenance_match(left, right),
-                );
-                // Address equality decides only pointers whose metadata
-                // already agrees; a wide pair needs its counts too.
-                matches
-                    && left.same_metadata_as(right)
-                    && graph.are_equal(left.address(), right.address())
+                self.graph_proves_pointer_equality(graph, left, right)
             }
             OldConditionTerm::AddressEqual(left, right) => graph.are_equal(left, right),
             OldConditionTerm::AddressOffsetEqual(left, right) => {
@@ -9021,6 +9061,7 @@ mod tests {
             let [left, right] = result.operand_view().pointer_values().unwrap();
             assert_eq!(left.export().unwrap(), to);
             assert_eq!(right.export().unwrap(), other);
+            assert!(!result.root().unwrap().has_cached_native_argument());
             assert!(!root.has_cached_native_argument());
         }
         let written = OldConditionTerm::pointer_equal(from, other);
