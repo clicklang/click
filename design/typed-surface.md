@@ -356,9 +356,27 @@ statement annotations among them, is elaborated whole before any of it is
 lowered: `click_proposition_to_spec_proposition` elaborates the clause with
 `elaborate_clause` and lowers the stored Surface, and binder bodies lower
 from theirs. Its scope is still the lowering context the clause is lowered
-in. Next, a proof clause's scope comes from the front end's declarations
-for its position: the function's, and the locals the C front end records
-as in scope at that statement.
+in, except for a proof clause at an execution frontier of a C function. The
+proof driver elaborates that clause itself (`elaborate_proof_clause`) and
+hands lowering the Surface (`ElaboratedProofClause`). Its scope is read from
+declarations alone (`DeclaredScope`):
+- The Click names the proof binds, from its integer and algebraic values.
+- The C names in scope at that position, from the function's declarations
+  and the locals the C front end records on each statement's site.
+
+The C front end records those locals in three places:
+- each statement's site, as the scope where the statement starts;
+- a `for` loop's head, for its test, step and body;
+- the end of the body, for a clause after the last statement.
+
+At a position, a C declaration has the type its value has in an expression:
+an array is a pointer to its first element, and a struct value has none. A
+binder the clause declares hides a C name of the same spelling. Debug builds
+check that the driver's Surface is what lowering's own elaboration gives
+(`lower_elaborated_proof_clause`).
+
+The Rust and C++ front ends record no scopes yet, so lowering still
+elaborates their proof clauses.
 
 `Declarations` reads names' C types from kernel states (the entry state, the
 entry values, and the state that declares the clause's locals) for names that

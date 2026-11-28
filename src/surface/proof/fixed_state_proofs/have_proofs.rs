@@ -152,6 +152,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     spec_definitions: SpecDefinitions<'_>,
+    elaborated: Option<&crate::surface::lowering::ElaboratedProofClause<'_>>,
 ) -> Result<Proposition, String> {
     lower_fixed_state_proposition_with_proof_locals(
         proposition,
@@ -162,6 +163,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
         integer_values,
         spec_definitions,
         false,
+        elaborated,
     )
 }
 
@@ -175,6 +177,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_proof_locals
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     spec_definitions: SpecDefinitions<'_>,
     is_conjunct_label: bool,
+    elaborated: Option<&crate::surface::lowering::ElaboratedProofClause<'_>>,
 ) -> Result<Proposition, String> {
     let names = proposition_referenced_names(proposition);
     let (values, array_refs) =
@@ -188,6 +191,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_proof_locals
         spec_definitions,
         FixedStateLoweringOptions {
             is_conjunct_label,
+            elaborated,
             algebraic_values: Some(algebraic_values),
             integer_values: Some(integer_values),
             pointer_element_widths: parameter_pointer_element_widths_named(
@@ -313,6 +317,10 @@ pub(in crate::surface) struct FixedStateLoweringOptions<'a> {
     /// A label only names a proposition the kernel has already selected.
     /// Its exact comparison with that goal publishes no evaluation evidence.
     pub(in crate::surface) is_conjunct_label: bool,
+    /// The proposition as the proof driver elaborated it at its position,
+    /// which lowering lowers instead of elaborating it.
+    pub(in crate::surface) elaborated:
+        Option<&'a crate::surface::lowering::ElaboratedProofClause<'a>>,
 }
 
 /// [`lower_fixed_state_proposition_through_kernel_with_facts`], keeping only
@@ -504,6 +512,7 @@ pub(in crate::surface) fn lower_stated_proposition_retaining_requirements(
         obligation_assumptions,
         assumed_interface,
         is_conjunct_label: _,
+        elaborated,
     } = options;
     let integer_values = integer_values.unwrap_or(&no_integer_values);
     let obligation_assumptions = obligation_assumptions.unwrap_or(assumptions);
@@ -530,6 +539,7 @@ pub(in crate::surface) fn lower_stated_proposition_retaining_requirements(
         spec_definitions,
         opaque_click_functions.cloned().unwrap_or_default(),
         pointer_element_widths,
+        elaborated,
     ).map_err(StatedPropositionRefusal::Elaboration)?;
     let spec = IterativeSpecPropositionDrop::new(spec);
     let lower = if assumed_interface {

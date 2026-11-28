@@ -1284,82 +1284,94 @@ impl Elaborator<'_> {
     }
 }
 
-#[cfg(debug_assertions)]
-thread_local! {
-    /// The front end's declarations for the proof clause being lowered:
-    /// its function's, with the C names in scope at the clause's statement.
-    /// A debug-only scaffold for `check_front_end_scope`, set by the proof
-    /// driver, which knows the clause's position, until the driver
-    /// elaborates proof clauses itself (`design/typed-surface.md`).
-    static PROOF_CLAUSE_SCOPE: std::cell::RefCell<Option<Declarations<'static>>> =
-        const { std::cell::RefCell::new(None) };
+/// A proof clause the proof driver elaborated from the front end's
+/// declarations at its position, with the type-inference failure the
+/// elaboration recorded, if any. Lowering lowers this Surface instead of
+/// elaborating the clause itself (`design/typed-surface.md`).
+pub(in crate::surface) struct ElaboratedProofClause<'s> {
+    pub(super) surface: SurfaceProposition<'s>,
+    pub(super) failure: Option<String>,
 }
 
-/// Debug builds: while this lives, the first clause lowered from Syntax is
-/// checked to elaborate the same from the front end's declarations at its
-/// position as from its lowering context (`check_front_end_scope`).
-#[cfg(debug_assertions)]
-pub(in crate::surface) struct ProofClauseScope(());
-
-#[cfg(debug_assertions)]
-impl ProofClauseScope {
-    /// The scope of a proof clause in `function` at the statement whose
-    /// source bindings, the C names in scope there, are `site_bindings`.
-    pub(in crate::surface) fn enter(
-        function: &crate::languages::interface::ImportedFunction,
-        site_bindings: Option<&syntax::CSourceBindings>,
-    ) -> Self {
-        // Only the C front end records the scope at each position so far;
-        // a Rust or C++ function's clauses are not checked yet.
-        if function.body_end_scope().is_none() {
-            return Self(());
-        }
-        let mut declarations = Declarations::of_function(function);
-        declarations.source_bindings = site_bindings.cloned();
-        PROOF_CLAUSE_SCOPE.with(|scope| *scope.borrow_mut() = Some(declarations));
-        Self(())
-    }
-}
-
-#[cfg(debug_assertions)]
-impl Drop for ProofClauseScope {
-    fn drop(&mut self) {
-        PROOF_CLAUSE_SCOPE.with(|scope| scope.borrow_mut().take());
-    }
-}
-
-/// Debug builds: the first clause lowered under a `ProofClauseScope`
-/// elaborates from the front end's declarations at its position (with its
-/// Click names still read from the lowering context) to the Surface its
-/// lowering context gave it. Only the first: a clause lowered inside it,
-/// such as an unfolded predicate's body, has a scope of its own.
-#[cfg(debug_assertions)]
-pub(super) fn check_front_end_scope(
-    lowerer: &AnnotationLowerer<'_>,
-    elaborated: &SurfaceProposition<'_>,
-    proposition: &SyntaxProposition,
-    context: &SpecElaborationContext,
-) {
-    let Some(declarations) = PROOF_CLAUSE_SCOPE.with(|scope| scope.borrow_mut().take()) else {
-        return;
+/// Elaborate a proof clause at its position in `function`: the C names in
+/// scope there are `scope`, and the proof binds the Click names in
+/// `integer_values` and `algebraic_values`. `None` for a function whose
+/// front end records no scopes (Rust, C++), whose clauses lowering still
+/// elaborates itself.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface) fn elaborate_proof_clause<'s>(
+    proposition: &'s SyntaxProposition,
+    function: &crate::languages::interface::ImportedFunction,
+    scope: Option<&syntax::CSourceBindings>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
+    result_in_scope: bool,
+    retained_states: &RecordedStates,
+    definitions: SpecDefinitions<'_>,
+) -> Option<ElaboratedProofClause<'s>> {
+    function.body_end_scope()?;
+    let mut declarations = Declarations::of_function(function);
+    declarations.source_bindings = scope.cloned();
+    let algebraic_values = algebraic_values.clone().into_iter().collect();
+    let declared = super::declared_scope::DeclaredScope {
+        declarations: &declarations,
+        integer_values,
+        algebraic_values: &algebraic_values,
+        contract_result_in_scope: result_in_scope,
     };
-    crate::instrumentation::uncharged_debug_check(|| {
-        let scope = super::declared_scope::DeclaredScope {
-            declarations: &declarations,
-            integer_values: &context.integer_values,
-            algebraic_values: &context.algebraic_values,
-            contract_result_in_scope: context.contract_result_in_scope,
-        };
-        let front_end = Elaborator {
-            declarations: declarations.clone(),
-            ..lowerer.elaborator()
-        };
-        assert_eq!(
-            &front_end.elaborate_clause(proposition, &TypingEnvironment::in_scope(&scope)),
-            elaborated,
-            "proof clause `{proposition:?}` elaborates differently from the front end's declarations at its position"
-        );
-    });
+    let mut captures = BTreeSet::<QuantifierCapture>::new();
+    collect_click_proposition_referenced_bindings(proposition, &mut captures);
+    let referenced = captures
+        .into_iter()
+        .filter_map(|capture| match capture {
+            QuantifierCapture::Name(name) => Some(name),
+            QuantifierCapture::Variable(_) => None,
+        })
+        .collect();
+    let elaborator = Elaborator {
+        declarations: declarations.clone(),
+        definitions,
+        retained_states: Some(retained_states),
+        capture_referenced_names: Some(Arc::new(referenced)),
+        type_inference_failure: std::cell::RefCell::new(None),
+    };
+    let surface = elaborator.elaborate_clause(proposition, &TypingEnvironment::in_scope(&declared));
+    Some(ElaboratedProofClause {
+        surface,
+        failure: elaborator.type_inference_failure.take(),
+    })
+}
+
+impl AnnotationLowerer<'_> {
+    /// Lower a proof clause the proof driver elaborated. The failure is held
+    /// where in-place elaboration would have left it, as lowering starts.
+    pub(super) fn lower_elaborated_proof_clause(
+        &mut self,
+        clause: &ElaboratedProofClause<'_>,
+        proposition: &SyntaxProposition,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecProposition, String> {
+        // Debug builds, until lowering stops elaborating proof clauses: the
+        // driver's elaboration is the one lowering would have made.
+        #[cfg(debug_assertions)]
+        crate::instrumentation::uncharged_debug_check(|| {
+            let elaborator = self.elaborator();
+            assert_eq!(
+                (
+                    &elaborator.elaborate_clause(proposition, &TypingEnvironment::of(environment)),
+                    &elaborator.type_inference_failure.take()
+                ),
+                (&clause.surface, &clause.failure),
+                "proof clause `{proposition:?}` elaborates differently from the front end's declarations at its position"
+            );
+        });
+        #[cfg(not(debug_assertions))]
+        let _ = proposition;
+        if let Some(failure) = &clause.failure {
+            self.type_inference_failure = Some(failure.clone());
+        }
+        self.lower_surface_proposition(&clause.surface, environment)
+    }
 }
 
 /// The type a range item of `item_type` has, as lowering binds it: the

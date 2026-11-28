@@ -304,6 +304,7 @@ impl<'a> Proof<'a> {
                     &algebraic_values,
                     &self.local_integer_values(),
                     context.spec_definitions,
+                    None,
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))
@@ -356,6 +357,7 @@ impl<'a> Proof<'a> {
                     &algebraic_values,
                     &self.local_integer_values(),
                     view.spec_definitions,
+                    None,
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))
@@ -374,8 +376,9 @@ impl<'a> Proof<'a> {
                 );
                 let pre_state =
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
-                #[cfg(debug_assertions)]
-                let _front_end_scope = crate::surface::lowering::ProofClauseScope::enter(
+                let integer_values = self.local_integer_values();
+                let elaborated = crate::surface::lowering::elaborate_proof_clause(
+                    &surface,
                     context.parsed_function,
                     context
                         .constants
@@ -386,6 +389,11 @@ impl<'a> Proof<'a> {
                             || context.parsed_function.body_end_scope(),
                             |site| site.scope(),
                         ),
+                    &integer_values,
+                    &algebraic_values,
+                    false,
+                    &execution.presentation.recorded_states,
+                    context.spec_definitions,
                 );
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
@@ -400,6 +408,7 @@ impl<'a> Proof<'a> {
                     &algebraic_values,
                     &self.local_integer_values(),
                     context.spec_definitions,
+                    elaborated.as_ref(),
                 )
                 .map_err(|message| {
                     if let Some(local) = unassigned_local_read_by(&surface, &execution.core.state) {
@@ -509,6 +518,7 @@ impl<'a> Proof<'a> {
                     &self.local_integer_values(),
                     context.spec_definitions,
                     is_conjunct_label,
+                    None,
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))
@@ -534,6 +544,7 @@ impl<'a> Proof<'a> {
                     &self.local_integer_values(),
                     view.spec_definitions,
                     is_conjunct_label,
+                    None,
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))
@@ -552,8 +563,9 @@ impl<'a> Proof<'a> {
                 );
                 let pre_state =
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
-                #[cfg(debug_assertions)]
-                let _front_end_scope = crate::surface::lowering::ProofClauseScope::enter(
+                let integer_values = self.local_integer_values();
+                let elaborated = crate::surface::lowering::elaborate_proof_clause(
+                    &surface,
                     context.parsed_function,
                     context
                         .constants
@@ -564,6 +576,11 @@ impl<'a> Proof<'a> {
                             || context.parsed_function.body_end_scope(),
                             |site| site.scope(),
                         ),
+                    &integer_values,
+                    &algebraic_values,
+                    false,
+                    &execution.presentation.recorded_states,
+                    context.spec_definitions,
                 );
                 lower_fixed_state_proposition_with_proof_locals(
                     &surface,
@@ -579,6 +596,7 @@ impl<'a> Proof<'a> {
                     &self.local_integer_values(),
                     context.spec_definitions,
                     is_conjunct_label,
+                    elaborated.as_ref(),
                 )
                 .map_err(|message| {
                     if let Some(local) = unassigned_local_read_by(&surface, &execution.core.state) {
