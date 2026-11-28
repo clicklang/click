@@ -100,70 +100,56 @@ fn preserve_viewability(
 // The written result selects only the observation's type. Its endpoints are
 // never used to manufacture the primitive's conclusion.
 fn read_type(result: &Proposition) -> Option<ReadType> {
-    match result {
-        Proposition::ConditionIs(_, true)
-            if matches!(
-                result.old_condition(),
-                Some((OldConditionTerm::BoolEqual(..), true))
-            ) =>
-        {
-            Some(ReadType::Boolean)
+    use crate::kernel::{BooleanOperandView, IntegerComparisonOperator, KernelTermNode};
+    let Proposition::ConditionIs(condition, true) = result else {
+        return None;
+    };
+    let view = condition.operand_view();
+    if view.equality().is_some() {
+        return Some(ReadType::Boolean);
+    }
+    if view.pointer_addresses().is_some() {
+        return Some(ReadType::IntegerAddress);
+    }
+    if let Some([left, right]) = view.pointer_values() {
+        let ty = left.node().program_type;
+        return (ty == right.node().program_type).then_some(ReadType::Pointer(ty));
+    }
+    if let Some((format, relation, _)) = view.comparison() {
+        return (relation == CompareRelation::Equal
+            && !matches!(
+                format,
+                MachineIntegerType::Int128 | MachineIntegerType::UInt128
+            ))
+        .then_some(ReadType::Integer(format));
+    }
+    if let Some((IntegerComparisonOperator::Equal, operands)) =
+        crate::kernel::machine_integer::comparison::written_integer_comparison(view)
+    {
+        let [left, right] = operands
+            .each_ref()
+            .map(|operand| match operand.root().node() {
+                KernelTermNode::MachineObservation { format, .. } => Some(*format),
+                _ => None,
+            });
+        let format = left?;
+        return (right == Some(format)
+            && matches!(
+                format,
+                MachineIntegerType::Int128 | MachineIntegerType::UInt128
+            ))
+        .then_some(ReadType::Integer(format));
+    }
+    match view {
+        BooleanOperandView::Native(OldConditionTerm::AlgebraicEqual(a, b)) => {
+            (a.algebraic_type == b.algebraic_type).then_some(ReadType::Abstract)
         }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::AlgebraicEqual(a, b), _)) =
-                condition_source_0.old_condition()
-                && (a.algebraic_type == b.algebraic_type) =>
-        {
-            Some(ReadType::Abstract)
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::AddressEqual(..), _)) =
-                condition_source_0.old_condition() =>
-        {
-            Some(ReadType::IntegerAddress)
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::PointerEqual(a, b), _)) =
-                condition_source_0.old_condition()
-                && (a.program_type() == b.program_type()) =>
-        {
-            Some(ReadType::Pointer(a.program_type()))
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::IntegerEqual(a, b), _)) =
-                condition_source_0.old_condition()
-                && let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (&**a, &**b)
-                && a.ty() == b.ty()
-                && matches!(
-                    a.ty(),
-                    MachineIntegerType::Int128 | MachineIntegerType::UInt128
-                ) =>
-        {
-            Some(ReadType::Integer(a.ty()))
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((
-                OldConditionTerm::Compare {
-                    format,
-                    relation: CompareRelation::Equal,
-                    ..
-                },
-                _,
-            )) = condition_source_0.old_condition()
-                && (matches!(
-                    format,
-                    MachineIntegerType::Int8
-                        | MachineIntegerType::UInt8
-                        | MachineIntegerType::Int16
-                        | MachineIntegerType::UInt16
-                        | MachineIntegerType::Int32
-                        | MachineIntegerType::UInt32
-                        | MachineIntegerType::Int64
-                        | MachineIntegerType::UInt64
-                )) =>
-        {
-            Some(ReadType::Integer(*format))
-        }
+        BooleanOperandView::Shared(root) => match root.node() {
+            KernelTermNode::AlgebraicEqual { arguments: [a, b] } => {
+                (a.ty() == b.ty()).then_some(ReadType::Abstract)
+            }
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -339,10 +325,10 @@ fn preserve_field(
 fn observation_type(comparison: ReadType, bytes: u32, result: &Proposition) -> Option<ReadType> {
     match (comparison, bytes) {
         (ReadType::Integer(MachineIntegerType::Int32), 1 | 2) => {
-            let (OldConditionTerm::Compare { left, right, .. }, true) = result.old_condition()?
-            else {
+            let Proposition::ConditionIs(condition, true) = result else {
                 return None;
             };
+            let (_, _, [left, right]) = condition.operand_view().comparison()?;
             let (left, _) = left.narrow_widening32_operand()?;
             let (right, _) = right.narrow_widening32_operand()?;
             (left == right && left.program_type().byte_width() == bytes)
@@ -387,7 +373,10 @@ fn observation_equality(
             ));
         }
         (ReadType::IntegerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            OldConditionTerm::address_equal(a.address().clone(), b.address().clone())
+            return Some(Proposition::condition_is(
+                crate::kernel::StoredConditionTerm::address_equal(a.address(), b.address()),
+                true,
+            ));
         }
         (ReadType::Abstract, ProgramValue::Parameter(a), ProgramValue::Parameter(b))
             if a.algebraic_type == b.algebraic_type =>
@@ -456,6 +445,43 @@ fn integer_equality(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn promoted_preservation_reads_exact_widenings_without_exporting_the_goal() {
+        use crate::kernel::{KernelTermImport, StoredConditionTerm};
+        use MachineIntegerType as T;
+        let _session = crate::kernel::VerificationSession::enter();
+        let widen = |source, variable| {
+            OldMachineTerm::machine_integer_cast(
+                source,
+                T::Int32,
+                OldMachineTerm::Variable(variable),
+            )
+        };
+        for (right_type, expected) in [
+            (T::UInt8, Some(ReadType::Integer(T::UInt8))),
+            (T::Int8, None),
+        ] {
+            let written = OldConditionTerm::equal(
+                widen(T::UInt8, Variable(983411)),
+                widen(right_type, Variable(983412)),
+            );
+            let root = KernelTermImport::default().condition(&written);
+            let stored = StoredConditionTerm::from_root(root.clone()).unwrap();
+            for condition in [StoredConditionTerm::from(written), stored] {
+                let goal = Proposition::condition_is(condition.clone(), true);
+                let comparison = read_type(&goal).unwrap();
+                assert_eq!(comparison, ReadType::Integer(T::Int32));
+                assert_eq!(observation_type(comparison, 1, &goal), expected);
+                assert_eq!(observation_type(comparison, 2, &goal), None);
+                assert_eq!(
+                    read_type(&Proposition::condition_is(condition, false)),
+                    None
+                );
+            }
+            assert!(!root.has_cached_native_argument());
+        }
+    }
 
     #[test]
     fn return_preservation_refuses_a_view_of_the_retired_local() {
