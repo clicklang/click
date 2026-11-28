@@ -25,6 +25,42 @@ fn graph() -> EqualityGraph {
 }
 
 #[test]
+fn stored_offset_equality_keeps_written_sums_and_uses_graph_evidence() {
+    let _session = VerificationSession::enter();
+    let [a, b] = [99839, 99840].map(offset);
+    let sum = |a: &AddressOffset| AddressOffset::raw_add(a.clone(), AddressOffset::constant(0));
+    let [left, right] = [sum(&a), sum(&b)];
+    let root =
+        KernelTerm::address_offset_equal_raw([left.shared().clone(), right.shared().clone()]);
+    let source = StoredConditionTerm::from_root(root.clone()).unwrap();
+    let mut graph = EqualityGraph::default();
+    graph.add_offset_equality(&left, &right);
+    let conditions = HashMap::new();
+
+    for truth in [false, true] {
+        let goal = Proposition::condition_is(source.clone(), truth);
+        let mut rewrite = TermRewrite::for_pointer_offset_exact(&a, &b);
+        let Proposition::ConditionIs(result, polarity) = rewrite.proposition(&goal) else {
+            panic!("expected an offset equality");
+        };
+        assert!(rewrite.changed);
+        assert_eq!(polarity, truth);
+        assert_eq!(
+            result.operand_view().pointer_offsets().unwrap(),
+            [right.shared().clone(), right.shared().clone()]
+        );
+        assert!(!result.root().unwrap().has_cached_native_argument());
+        assert_eq!(
+            TermRewrite::for_conditions_with_graph(&conditions, &graph)
+                .proposition(&goal)
+                .literal_condition(),
+            Some((true, truth))
+        );
+        assert!(!root.has_cached_native_argument());
+    }
+}
+
+#[test]
 fn stored_pointer_words_supply_order_guards_and_graph_operands() {
     let _session = VerificationSession::enter();
     let pointer = Pointer::new(

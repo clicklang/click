@@ -4189,6 +4189,20 @@ impl<'a> TermRewrite<'a> {
                             // Written address equality keeps even a reflexive pair as evidence.
                             Some(KernelTerm::address_equal_raw(addresses))
                         }
+                        Some(KernelTermNode::AddressOffsetEqual { arguments }) => {
+                            if !self.begin_stored_condition_visit(condition) {
+                                return exhausted_proposition();
+                            }
+                            let offsets = arguments.each_ref().map(|offset| {
+                                let written = AddressOffset::try_from_ref(offset)
+                                    .expect("written offset operand");
+                                self.offset(written).into_shared()
+                            });
+                            if self.checked_work_exhausted() {
+                                return exhausted_proposition();
+                            }
+                            Some(KernelTerm::address_offset_equal_raw(offsets))
+                        }
                         _ => None,
                     };
                     if let Some(root) = root {
@@ -6806,6 +6820,15 @@ impl<'a> TermRewrite<'a> {
                 ) || self
                     .equality_graph
                     .is_some_and(|graph| graph.are_equal(a, b))
+            }
+            KernelTermNode::AddressOffsetEqual { arguments } => {
+                let [a, b] = arguments
+                    .each_ref()
+                    .map(|offset| AddressOffset::try_from_ref(offset).expect("rewritten offset"));
+                self.pointer_association_proven(Some((a, b)))
+                    || self
+                        .equality_graph
+                        .is_some_and(|graph| graph.are_offsets_equal(a, b))
             }
             KernelTermNode::BoolCompare {
                 format: MachineIntegerType::Int64,
