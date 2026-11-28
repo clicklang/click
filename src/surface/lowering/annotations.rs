@@ -9167,6 +9167,9 @@ impl AnnotationLowerer<'_> {
                 },
             )
             && let Some(id) = state.locals().visible_local_declaration(source)
+            && state
+                .local_object_type(crate::kernel::BindingName::Local(id.clone()))
+                .is_some_and(|ty| ty.is_slice_pointer())
         {
             return self.lower_program_binding_to_spec(
                 crate::kernel::BindingName::Local(id.clone()),
