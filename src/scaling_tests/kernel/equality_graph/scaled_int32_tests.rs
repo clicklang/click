@@ -120,21 +120,12 @@ fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
         for i in 0..size {
             let id = 1_000 + i;
             graph.add_condition(&no_overflow(id, 4, true), false);
-            graph.add_offset_equality(
-                &byte_product(id, 8, true),
-                &offset(10_000 + i),
-            );
-            graph.add_offset_equality(
-                &scaled(id, 4),
-                &offset(20_000 + i),
-            );
+            graph.add_offset_equality(&byte_product(id, 8, true), &offset(10_000 + i));
+            graph.add_offset_equality(&scaled(id, 4), &offset(20_000 + i));
         }
         let first = offset(10);
         let second = offset(11);
-        graph.add_offset_equality(
-            &nested(byte_product(1, 4, true)),
-            &first,
-        );
+        graph.add_offset_equality(&nested(byte_product(1, 4, true)), &first);
         graph.add_offset_equality(&nested(scaled(1, 4)), &second);
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_condition(&no_overflow(1, 4, true), false);
