@@ -167,10 +167,9 @@ The default workflow is:
 
 Expand new proofs through checked steps. The build inventories references to
 legacy normalization in `build_support/normalize_expansion_edges.tsv`, and
-required PR and merge-queue checks allow its counts only to decrease. When
-replacing an existing route, remove its inventory row or lower its count.
-Use `click expand --check-normalize-removal --claim` to check that the
-replacement replays without compatibility normalization.
+required PR and merge-queue checks allow its counts only to decrease. Use
+`click expand --claim` to check that an expanded proof replays with proof search
+disabled.
 
 The feature playbook is the detailed checklist.
 
