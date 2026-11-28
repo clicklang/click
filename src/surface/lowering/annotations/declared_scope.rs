@@ -103,21 +103,35 @@ impl TypeScope for DeclaredScope<'_> {
         &self,
         name: &dyn crate::surface::binders::BinderKey,
     ) -> Option<ClickType> {
-        let ty = self.declared_type(name)?;
+        let declared = self.declared_type(name)?;
+        let struct_name = self.declared_struct(name);
+        if declared.is_pointer() {
+            let interface_type = generics::interface_type_from_program_type(declared);
+            return Some(match struct_name {
+                Some(struct_name) => ClickType::CObjectPointer {
+                    interface_type,
+                    struct_name,
+                },
+                None => ClickType::Program(interface_type),
+            });
+        }
+        // A struct-valued local has no scalar value; a struct-valued
+        // parameter's value is the pointer to its storage.
+        let parameter = self
+            .c_name(name)
+            .and_then(|name| name.local_id().map(|id| id.is_parameter()))
+            .unwrap_or(false);
+        if struct_name.is_some() && !parameter {
+            return None;
+        }
         // In an expression an array names a pointer to its first element.
-        let ty = match ty.array_element_type() {
+        let ty = match declared.array_element_type() {
             Some(element) => element.pointer_to()?,
-            None => ty,
+            None => declared,
         };
-        let interface_type = generics::interface_type_from_program_type(ty);
-        Some(match self.declared_struct(name) {
-            Some(struct_name) if ty.is_pointer() => ClickType::CObjectPointer {
-                interface_type,
-                struct_name,
-            },
-            Some(_) => return None,
-            None => ClickType::Program(interface_type),
-        })
+        Some(ClickType::Program(
+            generics::interface_type_from_program_type(ty),
+        ))
     }
     fn bound_pointer_element(&self, name: &crate::kernel::BindingName) -> Option<PointerElement> {
         let ty = self

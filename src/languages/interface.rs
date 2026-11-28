@@ -133,6 +133,10 @@ pub struct ImportedFunction {
     /// before its closing brace: the scope of a proof clause after its last
     /// statement, where no statement's site gives one.
     pub(super) body_end_scope: Option<crate::languages::c::syntax::CSourceBindings>,
+    /// For a C function, the declarations visible before its body opens:
+    /// its parameters, the C names a clause about a returned outcome is
+    /// written in, since the body's locals have left scope.
+    pub(super) parameter_scope: Option<crate::languages::c::syntax::CSourceBindings>,
     /// For a front end that lowers its own body, the statements as written
     /// each region of that body comes from.
     pub(super) source_sites: Option<std::sync::Arc<SourceSites>>,
@@ -875,6 +879,7 @@ impl ImportedFunction {
             string_literals: Vec::new(),
             loop_iterators: Vec::new(),
             body_end_scope: None,
+            parameter_scope: None,
             source_sites: None,
         }
     }
@@ -1134,6 +1139,12 @@ impl ImportedFunction {
     /// field.
     pub(crate) fn body_end_scope(&self) -> Option<&crate::languages::c::syntax::CSourceBindings> {
         self.body_end_scope.as_ref()
+    }
+
+    /// The declarations visible before a C function's body opens; see the
+    /// field.
+    pub(crate) fn parameter_scope(&self) -> Option<&crate::languages::c::syntax::CSourceBindings> {
+        self.parameter_scope.as_ref()
     }
 
     /// The iterator each loop advances, by loop index, for a Rust function.

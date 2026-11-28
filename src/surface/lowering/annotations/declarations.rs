@@ -52,7 +52,13 @@ impl Declarations<'static> {
         Declarations {
             source_bindings: None,
             entry_state: None,
-            result_type: function.return_type().to_kernel_type(),
+            // A struct result is the pointer to its storage, as the
+            // function's contract lowering types it.
+            result_type: if function.return_struct_name().is_some() {
+                ProgramType::UInt8Pointer
+            } else {
+                function.return_type().to_kernel_type()
+            },
             entry_values: Default::default(),
             local_type_state: None,
             program_parameter_types: function
@@ -433,18 +439,19 @@ impl Declarations<'_> {
 }
 
 /// The type the C declaration `name` resolves to has as a value in an
-/// expression: an array names a pointer to its first element, and a struct
-/// value has no scalar value.
+/// expression: an array names a pointer to its first element, as does a
+/// struct-valued parameter, whose value is the pointer to its storage. A
+/// struct-valued local has no scalar value.
 fn declared_value_type(name: &crate::kernel::BindingName) -> Option<ProgramType> {
     let ty = name.program_type()?;
     if ty.is_pointer() {
         return Some(ty);
     }
-    let struct_name = name
-        .local_id()
-        .and_then(|id| id.struct_name())
-        .or_else(|| name.static_id().and_then(|id| id.struct_name()));
-    if struct_name.is_some() {
+    let struct_local = match name.local_id() {
+        Some(id) => id.struct_name().is_some() && !id.is_parameter(),
+        None => name.static_id().and_then(|id| id.struct_name()).is_some(),
+    };
+    if struct_local {
         return None;
     }
     match ty.array_element_type() {
