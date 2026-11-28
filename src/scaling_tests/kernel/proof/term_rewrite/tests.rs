@@ -1453,6 +1453,44 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
 }
 
 #[test]
+fn machine_conditional_carriers_visit_each_shared_guard_node_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let integer = Variable(982803);
+        let mut guard = KernelTerm::integer_comparison(
+            IntegerComparisonOperator::LessThan,
+            [
+                KernelTerm::variable(KernelType::Integer, integer),
+                KernelTerm::integer_literal(0.into()),
+            ],
+        )
+        .unwrap();
+        for _ in 0..depth {
+            guard = KernelTerm::boolean_equal_raw([guard.clone(), guard]);
+        }
+        let format = MachineIntegerType::Int32;
+        let word =
+            |n| KernelTerm::variable(KernelType::Program(format.program_type()), Variable(n));
+        let machine =
+            KernelTerm::machine_if_shared(format, [guard.clone(), word(982804), word(982805)]);
+        let mut variables = CarrierVariables::for_rewrite(true);
+        collect_machine_operand_carriers(MachineOperandView::Shared(&machine), &mut variables);
+        assert_eq!(variables.integer, BTreeSet::from([integer]));
+        assert_eq!(
+            variables.program_values,
+            BTreeSet::from([Variable(982804), Variable(982805)])
+        );
+        assert!(!variables.exhausted());
+        assert!(
+            variables.nodes <= depth + 40,
+            "depth {depth}, visits {}",
+            variables.nodes
+        );
+        assert!(!guard.has_cached_native_argument());
+    }
+}
+
+#[test]
 fn shared_boolean_carrier_collection_visits_each_connective_once() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
