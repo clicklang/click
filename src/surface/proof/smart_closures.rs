@@ -3242,7 +3242,7 @@ impl<'a> Proof<'a> {
         let Proposition::ConditionIs(condition, expected) = self.goal()? else {
             return None;
         };
-        (crate::surface::checking::normalize_condition_without_assumptions(condition.old_form())
+        (crate::surface::checking::normalize_condition_without_assumptions(condition)
             == Some(!*expected))
         .then(|| {
             "it is false at this point: the values its reads resolve to here refute it, so no \
