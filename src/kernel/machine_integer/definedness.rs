@@ -6,7 +6,6 @@
 //! representability. Unsigned overflow remains wrapping arithmetic.
 
 use super::{FORMATS, Operation, comparison::ComparisonOperand, range, representation};
-#[cfg(test)]
 use crate::kernel::OldMachineTerm;
 use crate::kernel::{IntegerTerm, MachineIntegerType, OldConditionTerm, Proposition};
 
@@ -35,13 +34,21 @@ pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Pr
     else {
         return Vec::new();
     };
-    let (Some(left), Some(right)) = (
-        IntegerTerm::from_machine(ty, left.clone()),
-        IntegerTerm::from_machine(ty, right.clone()),
-    ) else {
-        return Vec::new();
-    };
-    ordinary_bounds(ty, operation.exact(left, right)).into()
+    bounds_for_operation(ty, operation, left, right)
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+pub(in crate::kernel) fn bounds_for_operation(
+    format: MachineIntegerType,
+    operation: Operation,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
+) -> Option<[Proposition; 2]> {
+    let left = IntegerTerm::from_machine(format, left.clone())?;
+    let right = IntegerTerm::from_machine(format, right.clone())?;
+    Some(ordinary_bounds(format, operation.exact(left, right)))
 }
 
 pub(crate) fn ordinary_bounds(format: MachineIntegerType, exact: IntegerTerm) -> [Proposition; 2] {

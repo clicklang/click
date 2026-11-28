@@ -386,6 +386,16 @@ impl PartialEq for dyn BorrowedConditionKey + '_ {
     }
 }
 impl Eq for dyn BorrowedConditionKey + '_ {}
+impl PartialOrd for dyn BorrowedConditionKey + '_ {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for dyn BorrowedConditionKey + '_ {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.written_identity().cmp(&other.written_identity())
+    }
+}
 impl std::hash::Hash for dyn BorrowedConditionKey + '_ {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.written_identity().hash(state);
@@ -394,6 +404,24 @@ impl std::hash::Hash for dyn BorrowedConditionKey + '_ {
 impl<'a> std::borrow::Borrow<dyn BorrowedConditionKey + 'a> for OldConditionTerm {
     fn borrow(&self) -> &(dyn BorrowedConditionKey + 'a) {
         self
+    }
+}
+
+impl crate::kernel::fact_collections::FactMap<OldConditionTerm, bool> {
+    pub(in crate::kernel) fn written_overflow_value(
+        &self,
+        format: MachineIntegerType,
+        op: OverflowOperation,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
+    ) -> Option<bool> {
+        self.get(&ConditionIdentity::Overflows {
+            format,
+            op,
+            left,
+            right,
+        } as &dyn BorrowedConditionKey)
+            .copied()
     }
 }
 
