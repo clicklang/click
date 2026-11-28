@@ -105,7 +105,7 @@ fn collect_machine_operand_carriers(
                     }
                 }
                 KernelTermNode::FloatConvert { operand, .. } => {
-                    collect_float_carriers(std::slice::from_ref(operand), variables);
+                    collect_numeric_carriers(std::slice::from_ref(operand), variables);
                 }
                 _ => collect_bitvector_carriers(
                     leaf.machine_conversion_leaf().expect("conversion leaf"),
@@ -650,10 +650,10 @@ fn collect_shared_condition_carriers<'a>(
                 }
             }
             KernelTermNode::FloatCompare { arguments, .. } => {
-                collect_float_carriers(arguments, variables)
+                collect_numeric_carriers(arguments, variables)
             }
             KernelTermNode::FloatClassify { operand, .. } => {
-                collect_float_carriers(std::slice::from_ref(operand), variables);
+                collect_numeric_carriers(std::slice::from_ref(operand), variables);
             }
             KernelTermNode::AddressEqual { arguments, .. } => {
                 for address in arguments {
@@ -687,7 +687,7 @@ fn collect_shared_condition_carriers<'a>(
     }
 }
 
-fn collect_float_carriers(operands: &[KernelTerm], variables: &mut CarrierVariables) {
+fn collect_numeric_carriers(operands: &[KernelTerm], variables: &mut CarrierVariables) {
     struct CallArguments<'a> {
         machine_carriers: std::slice::Iter<'a, Option<SharedMachineIntegerTerm>>,
         seen: BTreeSet<u64>,
@@ -729,24 +729,32 @@ fn collect_float_carriers(operands: &[KernelTerm], variables: &mut CarrierVariab
             return;
         }
         match term.node() {
-            KernelTermNode::FloatBinary { arguments, .. } => pending.push((arguments.iter(), None)),
-            KernelTermNode::FloatNegate { operand } => {
-                pending.push((std::slice::from_ref(operand).iter(), None))
+            KernelTermNode::FloatBinary { arguments, .. }
+            | KernelTermNode::MachineBinary { arguments, .. } => {
+                pending.push((arguments.iter(), None))
             }
-            KernelTermNode::FloatConvert {
-                source, operand, ..
-            } => {
-                if KernelFloatType::from_program_type(*source).is_some() {
-                    pending.push((std::slice::from_ref(operand).iter(), None));
-                } else {
-                    // Preserve the written machine input, including repeated read occurrences.
+            KernelTermNode::FloatNegate { operand }
+            | KernelTermNode::FloatConvert { operand, .. }
+            | KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => {
+                pending.push((std::slice::from_ref(operand).iter(), None));
+            }
+            KernelTermNode::FloatLiteral { .. }
+            | KernelTermNode::MachineLiteral(_)
+            | KernelTermNode::ThreadHandle(_) => {}
+            KernelTermNode::IntegerAddress { address, .. } => {
+                collect_shared_address_carriers(address, variables)
+            }
+            KernelTermNode::MemoryLoad { address, .. } => {
+                if variables.read_terms.is_some() {
                     collect_bitvector_carriers(
-                        &KernelTermExport::machine(operand).expect("machine conversion input"),
+                        term.machine_read_leaf().expect("machine read"),
                         variables,
                     );
+                } else {
+                    collect_shared_address_carriers(address, variables);
                 }
             }
-            KernelTermNode::FloatLiteral { .. } => {}
             KernelTermNode::Variable(variable) => {
                 collect_machine_variable_carriers(*variable, variables)
             }
@@ -762,12 +770,16 @@ fn collect_float_carriers(operands: &[KernelTerm], variables: &mut CarrierVariab
                     }),
                 ));
             }
-            _ => collect_bitvector_carriers(
-                FloatOperandView::Shared(term)
-                    .old_form()
-                    .expect("float atom"),
-                variables,
-            ),
+            _ => {
+                if let Some(float) = FloatOperandView::from_shared(term) {
+                    collect_bitvector_carriers(float.old_form().expect("float atom"), variables);
+                } else {
+                    collect_bitvector_carriers(
+                        &KernelTermExport::machine(term).expect("machine conversion input"),
+                        variables,
+                    );
+                }
+            }
         }
     }
 }
@@ -8601,6 +8613,54 @@ mod tests {
             vec![a.clone(), b.clone(), a, b]
         );
         assert!(!root.has_cached_native_argument());
+    }
+
+    #[test]
+    fn integer_to_float_carriers_keep_machine_read_occurrences_and_identity() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::UInt32;
+        let float = KernelFloatType::Float32;
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let a = Address::symbolic(Variable(9913));
+        let b = Address::symbolic(Variable(9914));
+        let read = |address: &Address| {
+            KernelTerm::shared_scalar_read_descriptor(
+                format,
+                &point,
+                address.shared(),
+                LoadKind::UInt32,
+            )
+        };
+        let left = read(&a);
+        let pair = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Subtract,
+            [left.clone(), read(&b)],
+        );
+        let sum = KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [pair, left]);
+        let converted = KernelTerm::float_convert(float, format.program_type(), sum).unwrap();
+        let predicate =
+            KernelTerm::float_classify(float, FloatClassification::Finite, converted).unwrap();
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(predicate).unwrap(), true);
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            [a.clone(), b.clone(), a.clone()]
+        );
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect_read_terms();
+        collector.collect(&fact);
+        let reads = collector.take_read_terms().collect::<Vec<_>>();
+        assert_eq!(reads.len(), 2);
+        for address in [a, b] {
+            assert!(reads.contains(&OldMachineTerm::read_named(
+                point.clone(),
+                address,
+                LoadKind::UInt32
+            )));
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 
     #[test]
