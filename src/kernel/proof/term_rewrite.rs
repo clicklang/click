@@ -687,21 +687,48 @@ fn collect_shared_condition_carriers<'a>(
     }
 }
 
-fn collect_stored_machine_carriers(value: &StoredMachineTerm, variables: &mut CarrierVariables) {
-    if let Some(root) = value.root()
-        && matches!(
-            root.node(),
-            KernelTermNode::MachineBinary { .. }
-                | KernelTermNode::MachineUnary { .. }
-                | KernelTermNode::MachineCast { .. }
-                | KernelTermNode::MachineLiteral(_)
-                | KernelTermNode::Variable(_)
-                | KernelTermNode::ThreadHandle(_)
-                | KernelTermNode::MemoryLoad { .. }
-                | KernelTermNode::IntegerAddress { .. }
-                | KernelTermNode::FloatConvert { .. }
-        )
+fn stored_numeric_root(value: &ExecutionValue) -> Option<&KernelTerm> {
+    let root = value.shared()?;
+    let KernelType::Program(ty) = root.ty() else {
+        return None;
+    };
+    if MachineIntegerType::from_program_type(*ty).is_none()
+        && KernelFloatType::from_program_type(*ty).is_none()
     {
+        return None;
+    }
+    matches!(
+        root.node(),
+        KernelTermNode::MachineBinary { .. }
+            | KernelTermNode::MachineUnary { .. }
+            | KernelTermNode::MachineCast { .. }
+            | KernelTermNode::MachineLiteral(_)
+            | KernelTermNode::Variable(_)
+            | KernelTermNode::ThreadHandle(_)
+            | KernelTermNode::MemoryLoad { .. }
+            | KernelTermNode::IntegerAddress { .. }
+            | KernelTermNode::FloatConvert { .. }
+            | KernelTermNode::FloatBinary { .. }
+            | KernelTermNode::FloatNegate { .. }
+            | KernelTermNode::FloatLiteral { .. }
+            | KernelTermNode::FloatRead(_)
+            | KernelTermNode::FloatCall(_)
+    )
+    .then_some(root)
+}
+
+fn collect_stored_program_carriers(value: &StoredProgramValue, variables: &mut CarrierVariables) {
+    if let Some(root) = stored_numeric_root(value.value()) {
+        if variables.visit() {
+            collect_numeric_carriers(std::slice::from_ref(root), variables);
+        }
+    } else {
+        collect_program_value_carriers(value.old_form(), variables);
+    }
+}
+
+fn collect_stored_machine_carriers(value: &StoredMachineTerm, variables: &mut CarrierVariables) {
+    if let Some(root) = stored_numeric_root(value.value()) {
         collect_numeric_carriers(std::slice::from_ref(root), variables);
     } else {
         // Other stored roots retain their producer's reading. In particular a
@@ -1724,7 +1751,7 @@ fn collect_integer_substitution_variables_with_carriers(
         match proposition {
             Proposition::VolatileAccess(event) => {
                 collect_pointer_carriers(&event.pointer, carriers);
-                collect_program_value_carriers(event.value.old_form(), carriers);
+                collect_stored_program_carriers(&event.value, carriers);
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
@@ -1742,7 +1769,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 collect_integer_substitution_term_variables(right, carriers);
             }
             Proposition::SequenceMembership { element, sequence } => {
-                collect_program_value_carriers(element.old_form(), carriers);
+                collect_stored_program_carriers(element, carriers);
                 collect_sequence_carriers(sequence, carriers);
             }
             Proposition::ConditionIs(condition, _) => {
@@ -1760,7 +1787,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 if carriers.exhausted() {
                     return;
                 }
-                collect_bitvector_carriers(bytes.old_form(), carriers);
+                collect_stored_machine_carriers(bytes, carriers);
             }
             Proposition::ResourceViewable { resource, .. } => {
                 collect_resource_carriers(resource, carriers)
@@ -1851,7 +1878,7 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
             }
         }
         Term::Bitvector32(value) => collect_stored_machine_carriers(value, variables),
-        Term::ProgramValue(value) => collect_program_value_carriers(value.old_form(), variables),
+        Term::ProgramValue(value) => collect_stored_program_carriers(value, variables),
         Term::Condition(value) => collect_stored_condition_carriers(value, variables),
         Term::PointerOffset(value) => {
             collect_retained_offset_carriers(value.root(), variables);
@@ -3609,7 +3636,7 @@ impl<'a> TermRewrite<'a> {
                     collect_retained_offset_carriers(root, &mut variables);
                 }
                 Term::ProgramValue(value) => {
-                    collect_program_value_carriers(value.old_form(), &mut variables);
+                    collect_stored_program_carriers(value, &mut variables);
                 }
                 Term::Sequence(value) => collect_sequence_carriers(value, &mut variables),
                 Term::Algebraic(value) => {
@@ -3897,7 +3924,7 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(&event.pointer, &mut variables);
-                    collect_program_value_carriers(event.value.old_form(), &mut variables);
+                    collect_stored_program_carriers(&event.value, &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
@@ -3973,7 +4000,7 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(base, &mut variables);
-                    collect_bitvector_carriers(bytes.old_form(), &mut variables);
+                    collect_stored_machine_carriers(bytes, &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 let base = self.pointer(base);
