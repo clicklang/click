@@ -1221,7 +1221,6 @@ mod outcome_claim_goal_tests {
         );
         let (transitioned, _) = closing
             .apply_resource_transition(
-                &crate::kernel::ExecutionState::new(),
                 crate::kernel::FunctionOutcome::Return {
                     value: crate::kernel::api::int32(0).into(),
                     state: Box::new(crate::kernel::ExecutionState::new()),
