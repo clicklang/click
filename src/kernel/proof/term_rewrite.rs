@@ -595,34 +595,43 @@ fn restore_mapping(
     }
 }
 
-pub(crate) fn mathematical_comparison(
-    condition: &StoredConditionTerm,
-) -> Option<(IntegerComparisonOperator, &[KernelTerm; 2])> {
-    let KernelTermNode::IntegerCompare {
-        operator,
-        arguments,
-    } = condition.root()?.node()
-    else {
-        return None;
-    };
-    arguments
-        .iter()
-        .all(KernelTerm::is_mathematical_integer)
-        .then_some((*operator, arguments))
-}
-
 fn collect_stored_condition_carriers(
     condition: &StoredConditionTerm,
     variables: &mut CarrierVariables,
 ) {
-    if let Some((_, arguments)) = mathematical_comparison(condition) {
-        if variables.visit() {
-            for argument in arguments {
-                collect_mathematical_integer_carriers(argument, variables);
-            }
+    let Some(root) = condition.root() else {
+        return collect_condition_carriers(condition.old_form(), variables);
+    };
+    let mut seen = std::collections::HashSet::new();
+    let mut pending = vec![root];
+    while let Some(term) = pending.pop() {
+        // Pointer queries return an ordered list of occurrences. Variable and
+        // read queries can reuse a shared Boolean subtree after its first visit.
+        if variables.pointer_terms.is_none() && !seen.insert(term.id()) {
+            continue;
         }
-    } else {
-        collect_condition_carriers(condition.old_form(), variables);
+        if !variables.visit() {
+            return;
+        }
+        match term.node() {
+            KernelTermNode::BoolIf { arguments } => pending.extend(arguments.iter().rev()),
+            KernelTermNode::BoolEqual { arguments } => pending.extend(arguments.iter().rev()),
+            KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) => {}
+            KernelTermNode::IntegerCompare { arguments, .. }
+                if arguments.iter().all(KernelTerm::is_mathematical_integer) =>
+            {
+                for argument in arguments {
+                    collect_mathematical_integer_carriers(argument, variables);
+                }
+            }
+            // An opaque root keeps its stored reading, including the exact
+            // argument payload supplied by a Boolean call producer.
+            _ if term == root => collect_condition_node_carriers(condition.old_form(), variables),
+            _ => collect_condition_node_carriers(
+                &BooleanOperandView::Shared(term).native(),
+                variables,
+            ),
+        }
     }
 }
 
@@ -980,6 +989,10 @@ fn collect_condition_carriers(condition: &OldConditionTerm, variables: &mut Carr
     if !variables.visit() {
         return;
     }
+    collect_condition_node_carriers(condition, variables);
+}
+
+fn collect_condition_node_carriers(condition: &OldConditionTerm, variables: &mut CarrierVariables) {
     match condition {
         OldConditionTerm::PointerEqual(left, right) => {
             collect_program_value_carriers(&ProgramValue::Pointer((**left).clone()), variables);
@@ -8402,6 +8415,38 @@ mod tests {
             malformed_rewrite.bits(&goal),
             OldMachineTerm::AlgebraicMatch { .. }
         ));
+    }
+
+    #[test]
+    fn stored_boolean_carriers_share_variable_work_and_keep_pointer_occurrences() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let integer = Variable(9905);
+        let comparison = KernelTerm::integer_comparison(
+            IntegerComparisonOperator::LessThan,
+            [
+                KernelTerm::variable(KernelType::Integer, integer),
+                KernelTerm::integer_literal(7.into()),
+            ],
+        )
+        .unwrap();
+        let a = Address::symbolic(Variable(9906));
+        let b = Address::symbolic(Variable(9907));
+        let pointers = KernelTerm::address_equal_raw([a.shared().clone(), b.shared().clone()]);
+        let root = KernelTerm::boolean_if_raw([comparison, pointers.clone(), pointers]);
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(root.clone()).unwrap(), true);
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&fact);
+        assert_eq!(collector.carriers.integer, BTreeSet::from([integer]));
+        assert_eq!(
+            collector.carriers.program_values,
+            BTreeSet::from([Variable(9906), Variable(9907)])
+        );
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            vec![a.clone(), b.clone(), a, b]
+        );
+        assert!(!root.has_cached_native_argument());
     }
 
     /// A loaded pointer names its read, and its read's address can mention a
