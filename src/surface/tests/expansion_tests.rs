@@ -3594,10 +3594,13 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
         .join("mdtests/bubble_sort3_loop_permutation.md");
     let markdown = std::fs::read_to_string(&path).unwrap();
     let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
-    let source_with_suffix = fixture.click_source.as_deref().unwrap().replace(
-        "        close();",
-        "        close();\n        have 0 == 0 by { close(); }",
-    );
+    let selected = "have result == 0 by { close(); }";
+    let suffix = "unfold(permutation::permutation(p, old(p), 0, 3));";
+    let source_with_suffix = fixture
+        .click_source
+        .as_deref()
+        .unwrap()
+        .replace(suffix, &format!("{selected}\n        {suffix}"));
     let source = source_with_suffix.as_str();
     let sources = fixture
         .c_sources
@@ -3607,18 +3610,19 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     verify_c_sources(source, &sources).unwrap();
     let position = expansion::position_at_offset(
         source,
-        source.rfind("close();\n        have 0 == 0").unwrap(),
+        source.find(selected).unwrap() + selected.find("close").unwrap(),
     );
     let expanded =
         expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap();
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
-        expanded.contains("have 0 == 0 by { close(); }"),
+        expanded.contains(suffix),
         "the unselected suffix stays written"
     );
+    let guard = "if p[(j + 1)] < p[j] {";
     assert_eq!(
-        expanded.matches("if ").count(),
-        source.matches("if ").count()
+        expanded.matches(guard).count(),
+        source.matches(guard).count()
     );
     verify_c_sources(&expanded, &sources).unwrap();
     let claim =
