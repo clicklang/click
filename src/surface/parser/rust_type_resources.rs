@@ -27,9 +27,14 @@ use crate::languages::interface::RecordLayout;
 /// The type resource of a box of the struct `record`, or of an option of
 /// one: its resource name.
 fn resource_name(record: &str, optional: bool) -> String {
-    let boxed = rust_generic_resources::instance_name("Box", &[record.to_string()]);
+    use crate::languages::rust::names::push_type_argument;
+
+    let mut boxed = String::from("Box");
+    push_type_argument(&mut boxed, record);
     if optional {
-        rust_generic_resources::instance_name("Option", &[boxed])
+        let mut option = String::from("Option");
+        push_type_argument(&mut option, &boxed);
+        option
     } else {
         boxed
     }
