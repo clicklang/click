@@ -381,7 +381,7 @@ impl<'a> Proof<'a> {
                         .constants
                         .source_layout
                         .site(execution.core.frontier.next_statement_index)
-                        .and_then(|site| site.source_bindings()),
+                        .and_then(|site| site.scope()),
                 );
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
@@ -555,7 +555,7 @@ impl<'a> Proof<'a> {
                         .constants
                         .source_layout
                         .site(execution.core.frontier.next_statement_index)
-                        .and_then(|site| site.source_bindings()),
+                        .and_then(|site| site.scope()),
                 );
                 lower_fixed_state_proposition_with_proof_locals(
                     &surface,

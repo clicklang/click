@@ -2469,6 +2469,9 @@ pub struct CStatementSite {
     /// statement's lowering moved ahead of it carry the same path.
     source_path: Option<std::sync::Arc<[u32]>>,
     source_bindings: Option<std::sync::Arc<CSourceBindings>>,
+    /// The declarations visible where the statement starts, before anything
+    /// it declares: the scope a proof clause at this statement is written in.
+    scope: Option<CSourceBindings>,
 }
 
 /// Persistent lexical declaration index captured at a C loop head.
@@ -2488,16 +2491,22 @@ impl CSite {
         self.0.is_none()
     }
 
-    /// This site, recording that its statement is the one at `path`.
-    fn with_source_path(self, path: Option<std::sync::Arc<[u32]>>) -> Self {
-        match (self.0, path) {
-            (Some(site), Some(path)) => Self(Some(std::sync::Arc::new(CStatementSite {
+    /// This site, recording that its statement is the one at `path` and
+    /// starts where `scope` is visible.
+    fn at_source_statement(
+        self,
+        path: Option<std::sync::Arc<[u32]>>,
+        scope: CSourceBindings,
+    ) -> Self {
+        match self.0 {
+            Some(site) => Self(Some(std::sync::Arc::new(CStatementSite {
                 position: site.position.clone(),
                 text: site.text.clone(),
-                source_path: Some(path),
+                source_path: path.or_else(|| site.source_path.clone()),
                 source_bindings: site.source_bindings.clone(),
+                scope: Some(scope),
             }))),
-            (site, _) => Self(site),
+            None => Self(None),
         }
     }
 }
@@ -2520,6 +2529,11 @@ impl std::fmt::Debug for CSite {
 impl CStatementSite {
     pub(crate) fn source_bindings(&self) -> Option<&CSourceBindings> {
         self.source_bindings.as_deref()
+    }
+
+    /// The declarations visible where this statement starts; see the field.
+    pub(crate) fn scope(&self) -> Option<&CSourceBindings> {
+        self.scope.as_ref()
     }
 
     /// The statement's place among the statements as written; see the field.
@@ -11952,6 +11966,7 @@ impl Parser {
         // The ordinary leaf path must keep the large conditional dispatcher
         // out of expression parsing's small-stack callers.
         let start = self.position;
+        let scope = self.visible_bindings.clone();
         let path = self.begin_source_statement();
         let control_scope = matches!(self.peek_ident(), Some("while" | "do" | "for" | "switch"));
         if control_scope {
@@ -11969,7 +11984,7 @@ impl Parser {
         let mut statement = statement?;
         let site = self
             .site_between(start, self.position)
-            .with_source_path(path);
+            .at_source_statement(path, scope);
         fill_missing_sites(&mut statement, &site);
         Ok(statement)
     }
@@ -11981,7 +11996,7 @@ impl Parser {
     fn parse_statement_iterative(&mut self) -> Result<CStatement, CSyntaxError> {
         enum Task {
             Parse(Option<&'static str>),
-            Site(usize, Option<std::sync::Arc<[u32]>>),
+            Site(usize, Option<std::sync::Arc<[u32]>>, CSourceBindings),
             Controlled,
             ControlScope,
             Block(Vec<CStatement>, bool),
@@ -12010,7 +12025,11 @@ impl Parser {
                     // parent's, opened until its site is recorded.
                     if controlled.is_none() || self.peek() != Some(&Token::LBrace) {
                         let path = self.begin_source_statement();
-                        tasks.push(Task::Site(self.position, path));
+                        tasks.push(Task::Site(
+                            self.position,
+                            path,
+                            self.visible_bindings.clone(),
+                        ));
                     }
                     if matches!(
                         self.peek_ident(),
@@ -12039,12 +12058,12 @@ impl Parser {
                         results.push((statement, lowerable));
                     }
                 }
-                Task::Site(start, path) => {
+                Task::Site(start, path, scope) => {
                     self.end_source_statement();
                     let (mut statement, lowerable) = results.pop().expect("parsed statement");
                     let site = self
                         .site_between(start, self.position)
-                        .with_source_path(path);
+                        .at_source_statement(path, scope);
                     fill_missing_sites(&mut statement, &site);
                     results.push((statement, lowerable));
                 }
@@ -21747,6 +21766,7 @@ fn statement_site(position: &SourcePosition, text: &str, continues: bool) -> CSi
         text: excerpt.into_boxed_str(),
         source_path: None,
         source_bindings: None,
+        scope: None,
     })))
 }
 
