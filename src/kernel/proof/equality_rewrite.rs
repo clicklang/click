@@ -204,6 +204,24 @@ impl PureFactStore {
 }
 
 pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
+    if let Proposition::ConditionIs(condition, truth) = equality {
+        if !truth {
+            return None;
+        }
+        let view = condition.operand_view();
+        let reversed = if let Some([left, right]) = view.pointer_addresses() {
+            Some(KernelTerm::address_equal_raw([right, left]))
+        } else {
+            view.pointer_offsets()
+                .map(|[left, right]| KernelTerm::address_offset_equal_raw([right, left]))
+        };
+        if let Some(root) = reversed {
+            return Some(Proposition::condition_is(
+                StoredConditionTerm::from_root(root).expect("address equality is Boolean"),
+                true,
+            ));
+        }
+    }
     if let Some((OldConditionTerm::BoolEqual(a, b), true)) = (equality).old_condition() {
         return Some(Proposition::condition_is(
             OldConditionTerm::BoolEqual(b.clone(), a.clone()),
@@ -283,22 +301,10 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
             OldConditionTerm::IntegerEqual(b.clone(), a.clone())
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::AddressOffsetEqual(a, b), _)) =
-                condition_source_0.old_condition() =>
-        {
-            OldConditionTerm::AddressOffsetEqual(b.clone(), a.clone())
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((OldConditionTerm::PointerEqual(a, b), _)) =
                 condition_source_0.old_condition() =>
         {
             OldConditionTerm::PointerEqual(b.clone(), a.clone())
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::AddressEqual(a, b), _)) =
-                condition_source_0.old_condition() =>
-        {
-            OldConditionTerm::AddressEqual(b.clone(), a.clone())
         }
         _ => return None,
     };
@@ -702,6 +708,15 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
     if equality.literal_condition() == Some((true, true)) {
         return true;
     }
+    if let Proposition::ConditionIs(condition, true) = equality {
+        let view = condition.operand_view();
+        if let Some([left, right]) = view.pointer_addresses() {
+            return left.syntax_equal(&right);
+        }
+        if let Some([left, right]) = view.pointer_offsets() {
+            return left.syntax_equal(&right);
+        }
+    }
     match equality {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => left == right,
         // σ(x) == x is x == x under rule K6: the same bits.
@@ -759,18 +774,6 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
                     })
             };
             sign_cast_of(left, right) || sign_cast_of(right, left)
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::AddressOffsetEqual(left, right), _)) =
-                condition_source_0.old_condition() =>
-        {
-            left == right
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::AddressEqual(left, right), _)) =
-                condition_source_0.old_condition() =>
-        {
-            left == right
         }
         _ => false,
     }
