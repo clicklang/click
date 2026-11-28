@@ -8085,7 +8085,9 @@ slice types, which keep the data pointer and the length, so
 sidecar writes `s.len()`, `s.as_ptr()` and `s.as_bytes()`, and a failure
 prints a string slice, and one built from bytes, in those spellings and
 `click::rust::str::from_utf8_unchecked(v)`. A `&str` parameter of a `fn` is
-still its pointer and its length ([string slices](../rust.md#string-slices)).
+one string slice; its contract reads `s.len()` and `s.as_ptr()`, and its
+bytes as `click::rust::str::as_bytes(s)`, which a call of `s.as_bytes()` in
+the code returns ([string slices](../rust.md#string-slices)).
 
 ### `str::len`
 
@@ -8472,9 +8474,14 @@ method over the slice's length.
 ```click
 fn str::len(s: &str) -> usize { ensures result == s.len(); }
 fn str::is_empty(s: &str) -> bool { ensures result == (s.len() == 0u64); }
+fn str::as_bytes(s: &str) -> &[u8] { ensures result == click::rust::str::as_bytes(s); }
 ```
 
-**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `byte_len`, `blank`, `longer` and `width` in [`tests/fixtures/rust-verification/str-views/strs.rs`](https://github.com/clicklang/click/blob/master/tests/fixtures/rust-verification/str-views/strs.rs) in `charon_str_views_read_as_byte_slices`, and refuses claims about a length the calls do not give.
+`str::as_bytes` gives the string slice's bytes as a byte slice, the
+[`str::as_bytes`](#stras_bytes) retyping of the same data pointer and length,
+so a caller reads the result with the byte slice's own methods.
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `byte_len`, `blank`, `longer` and `width` in [`tests/fixtures/rust-verification/str-views/strs.rs`](https://github.com/clicklang/click/blob/master/tests/fixtures/rust-verification/str-views/strs.rs) in `charon_str_views_read_as_byte_slices`, and refuses claims about a length the calls do not give. It verifies `byte_count` and `first_byte` in [`tests/fixtures/rust-verification/str-bytes/bytes.rs`](https://github.com/clicklang/click/blob/master/tests/fixtures/rust-verification/str-bytes/bytes.rs), which read a string's length and index its first byte through `s.as_bytes()`, in `charon_str_as_bytes_reads_the_same_bytes`, and refuses a claim about a length the view does not have and an index into a string that may be empty.
 
 ## `click::separation`
 

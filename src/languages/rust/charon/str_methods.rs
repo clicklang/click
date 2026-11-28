@@ -1,10 +1,11 @@
-//! Rust `str` methods, `s.len()` and `s.is_empty()`: each call is a call of
-//! an external function the importer declares once per method, whose
-//! contract is the library's (`library/rust/str.interface.click`). A
-//! `&str` is read as a shared slice of its bytes ([`Adapter::ty`]), so the
-//! contracts state the methods over the slice's length. The callee is
-//! checked by identity, an inherent method of `core::str`, with the
-//! signature the method has.
+//! Rust `str` methods, `s.len()`, `s.is_empty()` and `s.as_bytes()`: each
+//! call is a call of an external function the importer declares once per
+//! method, whose contract is the library's
+//! (`library/rust/str.interface.click`). A `&str` is read as a shared slice
+//! of its bytes ([`Adapter::ty`]), so the contracts state the methods over
+//! the string slice the parameter receives. The callee is checked by
+//! identity, an inherent method of `core::str`, with the signature the
+//! method has.
 use super::*;
 
 impl Adapter<'_> {

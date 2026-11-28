@@ -13,8 +13,9 @@ one from raw parts, the Surface `Slice<T>` is the built-in type, with
 every wide pointer raising to it, and `Str` is its string slice type, with
 `str`'s operations. Steps 3a and 3b are done: a program reads and builds a
 wide value through three program operations, and a Rust `fn`'s slice
-parameters and locals are one wide value. Returns and `as_bytes` in imported
-Rust remain (step 3c).
+parameters and locals are one wide value. Step 3c is done: slice returns are
+one wide value, and `s.as_bytes()` in imported Rust calls the library's
+`str::as_bytes`. Steps 4 and 5 remain.
 
 ## Requirements
 
@@ -768,10 +769,10 @@ construct.
      `a_string_slice_raises_with_its_own_operations`,
      `surface::tests::rust_slice_functions` (the string slice cases),
      `rust_slice_string_values_read_with_str_methods`.
-   - **2b-iii-d-ii. `as_bytes` in imported Rust.** Not done.
+   - **2b-iii-d-ii. `as_bytes` in imported Rust.** Done as step 3c-ii.
      `str.interface.click` states `as_bytes` as `result ==
      str::as_bytes(s)`, mapped in the Rust front end's name table only.
-     It cannot land before step 3: its result is a slice a call returns,
+     It could not land before step 3: its result is a slice a call returns,
      and a Rust local or argument of slice type is still a pointer and a
      length, which a wide call result cannot initialize without a
      program-level component read or a wide local, so this part moves
@@ -934,11 +935,50 @@ construct.
      The same holds with no call: in `let view = bytes; view[0]`, `have
      at(statement(0).exit, view[0]) == bytes[0];` is not proved either. It
      is a memory-state question for shared views, not a slice-return one.
-     The read's raising there is also unlowerable: it prints `*(bytes as
-     (uint8 *))`, the slice parameter named as a pointer by the parameter
-     route of `synthesize_surface_pointer`, which does not check that the
-     argument is wide.
-   - **3c-ii. `as_bytes` in imported Rust.** Not done (2b-iii-d-ii).
+     There the goal is `read<Bits32>(state#1, bytes.as_ptr()) ==
+     int32(read<UInt8>(state#1, bytes.as_ptr()))`: the recorded-point read
+     of `view[0]` is a 32-bit read, and the goal raises as `old(bytes[0]) ==
+     (old(bytes[0]) as i32)`, which re-lowers to a provable fact, so it
+     differs from the goal. Neither is fixed. In the caller of a returned
+     slice the kernel goal is `read<UInt8>(state#1, s.as_ptr()) ==
+     read<UInt8>(state#1, s.as_ptr())` with the two loads at different
+     memory versions (a recorded state at the call's region entry and the
+     outcome), so "the two sides read the same address in different memory
+     states" is reported while both sides print alike.
+
+     Fixed in 3c-ii: the parameter routes of `synthesize_surface_pointer`
+     and `synthesize_surface_pointer_offset` named a slice parameter's data
+     pointer as the slice, so a read through it raised as `*(bytes as
+     (uint8 *))`, which does not lower. They now name it `bytes.as_ptr()`
+     when the argument is wide (`parameter_pointer_name`), and a read
+     through a slice parameter takes the slice's element type, so it raises
+     as `*bytes.as_ptr()` and lowers back to the same read. Test:
+     `a_read_through_a_slice_parameter_names_its_data_pointer`.
+   - **3c-ii. `as_bytes` in imported Rust.** Done (2b-iii-d-ii), with the
+     3c-i limits. `s.as_bytes()` on a `&str` is a name-table entry
+     (`STR_METHODS` in `rust/standard_library.rs`, result `&[u8]`), so the
+     call is the external `str::as_bytes`, whose contract is the line
+     `fn str::as_bytes(s: &str) -> &[u8] { ensures result ==
+     click::rust::str::as_bytes(s); }` of `str.interface.click`: the spec
+     retyping, the same data pointer and length at `[u8]`. Its result is a
+     call's slice result, assigned to a slice local as 3c-i lowers any. The
+     contract names the spec function by its full path: inside `fn
+     str::as_bytes` the method form `s.as_bytes()` of the `&str` parameter
+     does not parse to the spec function ("application expects a
+     specification lambda value"), since a `fn`'s `&str` parameter has only
+     `len()` and `as_ptr()` as program methods. Test:
+     `charon_str_as_bytes_reads_the_same_bytes`
+     (`tests/fixtures/rust-verification/str-bytes`): the length is the
+     string's, an index into the view is in bounds under `0 < s.len()`, and
+     without it the index is refused. Limits, shared with every call's slice
+     result: `s.as_bytes().len()` is refused ("an unnamed compiler local
+     requires storage with no supported identity"; so is `whole(bytes).len()`
+     for a crate `fn`), and `result == click::rust::str::as_bytes(s)[0]` for
+     `let bytes = s.as_bytes(); bytes[0]` is not proved (the 3c-i element
+     read limit). The refused index prints its condition as `0u64 <
+     bytes.as_ptr().len()`, a count of the stored slice local raised through
+     its data pointer, which does not lower; it is the same before this
+     step and is not fixed here.
 4. **split_at, iterators, chunks.** Their inputs and the slices they yield
    are wide pointers; their internal fields stay.
 5. **Cleanup and docs.** `docs/reference/rust.md` (byte slices, string
