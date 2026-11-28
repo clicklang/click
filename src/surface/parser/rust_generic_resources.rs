@@ -33,9 +33,20 @@ struct Block {
 }
 
 /// The generated definition and its uses share the resource's source name.
-fn instance_name(resource: &str, arguments: &[String]) -> String {
+fn instance_name(resource: &str, arguments: &[String], is_object: bool) -> String {
     if let Some(name) = super::cpp_class_objects::object_resource_instance(resource, arguments) {
         return name;
+    }
+    if is_object {
+        // Rust trait-object handles use the family computed by object_family.
+        let mut family = resource.to_owned();
+        for argument in arguments {
+            crate::languages::rust::names::push_type_argument(
+                &mut family,
+                &argument.replace(' ', "_"),
+            );
+        }
+        return family;
     }
     let arguments = arguments
         .iter()
@@ -178,6 +189,9 @@ pub(super) fn expand_generic_resources(
     }
     let mut output = Vec::with_capacity(source.len());
     let mut moved = BTreeSet::new();
+    let name_instance = |name: &str, arguments: &[String]| {
+        instance_name(name, arguments, object_instances.contains_key(name))
+    };
     let mut index = 0;
     while index < source.len() {
         if written.contains(&index) {
@@ -185,14 +199,22 @@ pub(super) fn expand_generic_resources(
         }
         if let Some((name, block)) = blocks.iter().find(|(_, block)| block.start == index) {
             for arguments in &instances[name] {
-                output.extend(instance(&source, block, name, arguments, &uses, concrete));
+                output.extend(instance(
+                    &source,
+                    block,
+                    name,
+                    arguments,
+                    &uses,
+                    concrete,
+                    &name_instance,
+                ));
             }
             index = block.end;
             continue;
         }
         if let Some((name, arguments, after)) = uses.get(&index) {
             output.push((
-                Token::Ident(instance_name(name, arguments)),
+                Token::Ident(name_instance(name, arguments)),
                 source[index].1.clone(),
             ));
             index = *after;
@@ -359,6 +381,7 @@ fn instance(
     arguments: &[String],
     uses: &BTreeMap<usize, (String, Vec<String>, usize)>,
     concrete: fn(&str) -> bool,
+    name_instance: &impl Fn(&str, &[String]) -> String,
 ) -> Vec<Spanned> {
     let position = source[block.start].1.clone();
     let substitution = block
@@ -374,7 +397,7 @@ fn instance(
     };
     let mut tokens = source[block.start..=block.keyword].to_vec();
     tokens.push((
-        Token::Ident(instance_name(name, arguments)),
+        Token::Ident(name_instance(name, arguments)),
         position.clone(),
     ));
     let abstract_arguments = arguments
@@ -398,7 +421,7 @@ fn instance(
         if let Some((used, used_arguments, after)) = uses.get(&index) {
             let used_arguments = used_arguments.iter().map(substituted).collect::<Vec<_>>();
             tokens.push((
-                Token::Ident(instance_name(used, &used_arguments)),
+                Token::Ident(name_instance(used, &used_arguments)),
                 source[index].1.clone(),
             ));
             index = *after;
@@ -453,8 +476,13 @@ mod tests {
         }
 
         assert_eq!(
-            instance_name("nodes", &["unsigned long".into(), "int".into()]),
+            instance_name("nodes", &["unsigned long".into(), "int".into()], false),
             "nodes<unsigned long, int>"
+        );
+        let trait_family = "__rust_q_I6_shapes_I5_Shape_I6_object";
+        assert_eq!(
+            instance_name(trait_family, &["T".into()], true),
+            format!("{trait_family}_A1_T")
         );
     }
 }
