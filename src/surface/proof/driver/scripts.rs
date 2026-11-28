@@ -588,7 +588,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 // conclusion, an `unfold` whose refreshed goal was already
                 // an available fact) asserts a closed judgment: a harmless
                 // no-op that emits no redundant certificate step. That is
-                // `known`, a bare `solve`, and the context-free `normalize`,
+                // `known`, a bare `solve`, and the checked bound closer,
                 // in any position, so `unfold(f(x)); close();` means the
                 // same whether or not the unfold alone closed the goal. Any
                 // other suffix after closure is a declined shape, named with
@@ -598,10 +598,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     ProofTactic::Known
                         | ProofTactic::Close
                         | ProofTactic::Solve
-                        | ProofTactic::Normalize
-                        | ProofTactic::NormalizeUsing(_)
                         | ProofTactic::CloseBounds(_)
-                        | ProofTactic::CompatibilityNormalize(_)
                 ) {
                     // The harmless closer checks nothing: its expansion is
                     // empty.

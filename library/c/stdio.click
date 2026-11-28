@@ -156,53 +156,63 @@ theorem pow10_nonzero(e: uint64) {
     requires e < 20u64;
     ensures stdio::pow10(e) != 0u64 by {
         if e == 19u64 {
-            unfold(stdio::pow10(e));
-            close() using { e == 19u64; };
+            rewrite(e, 19u64);
+            unfold(stdio::pow10(19u64));
+            close();
         } else {
             have e < 19u64 by { close() using { e < 20u64; not (e == 19u64); }; }
             if e == 18u64 {
-                unfold(stdio::pow10(e));
-                close() using { e == 18u64; };
+                rewrite(e, 18u64);
+                unfold(stdio::pow10(18u64));
+                close();
             } else {
                 have e < 18u64 by { close() using { e < 19u64; not (e == 18u64); }; }
                 if e == 17u64 {
-                    unfold(stdio::pow10(e));
-                    close() using { e == 17u64; };
+                    rewrite(e, 17u64);
+                    unfold(stdio::pow10(17u64));
+                    close();
                 } else {
                     have e < 17u64 by { close() using { e < 18u64; not (e == 17u64); }; }
                     if e == 16u64 {
-                        unfold(stdio::pow10(e));
-                        close() using { e == 16u64; };
+                        rewrite(e, 16u64);
+                        unfold(stdio::pow10(16u64));
+                        close();
                     } else {
                         have e < 16u64 by { close() using { e < 17u64; not (e == 16u64); }; }
                         if e == 15u64 {
-                            unfold(stdio::pow10(e));
-                            close() using { e == 15u64; };
+                            rewrite(e, 15u64);
+                            unfold(stdio::pow10(15u64));
+                            close();
                         } else {
                             have e < 15u64 by { close() using { e < 16u64; not (e == 15u64); }; }
                             if e == 14u64 {
-                                unfold(stdio::pow10(e));
-                                close() using { e == 14u64; };
+                                rewrite(e, 14u64);
+                                unfold(stdio::pow10(14u64));
+                                close();
                             } else {
                                 have e < 14u64 by { close() using { e < 15u64; not (e == 14u64); }; }
                                 if e == 13u64 {
-                                    unfold(stdio::pow10(e));
-                                    close() using { e == 13u64; };
+                                    rewrite(e, 13u64);
+                                    unfold(stdio::pow10(13u64));
+                                    close();
                                 } else {
                                     have e < 13u64 by { close() using { e < 14u64; not (e == 13u64); }; }
                                     if e == 12u64 {
-                                        unfold(stdio::pow10(e));
-                                        close() using { e == 12u64; };
+                                        rewrite(e, 12u64);
+                                        unfold(stdio::pow10(12u64));
+                                        close();
                                     } else {
                                         have e < 12u64 by { close() using { e < 13u64; not (e == 12u64); }; }
                                         if e == 11u64 {
-                                            unfold(stdio::pow10(e));
-                                            close() using { e == 11u64; };
+                                            rewrite(e, 11u64);
+                                            unfold(stdio::pow10(11u64));
+                                            close();
                                         } else {
                                             have e < 11u64 by { close() using { e < 12u64; not (e == 11u64); }; }
                                             if e == 10u64 {
-                                                unfold(stdio::pow10(e));
-                                                close() using { e == 10u64; };
+                                                rewrite(e, 10u64);
+                                                unfold(stdio::pow10(10u64));
+                                                close();
                                             } else {
                                                 have e < 10u64 by { close() using { e < 11u64; not (e == 10u64); }; }
                                                 if e == 9u64 {
@@ -268,7 +278,9 @@ theorem pow10_nonzero(e: uint64) {
                                                                                     close();
                                                                                 } else {
                                                                                     have e < 1u64 by { close() using { e < 2u64; not (e == 1u64); }; }
-                                                                                    have e == 0u64 by { close() using { e < 1u64; }; }
+                                                                                    have e <= 0u64 by { close() using { e < 1u64; }; }
+                                                                                    have 0u64 <= e by { close(); }
+                                                                                    have e == 0u64 by { close() using { 0u64 <= e; e <= 0u64; }; }
                                                                                     rewrite(e, 0u64);
                                                                                     apply(stdio::pow10_0());
                                                                                     rewrite(stdio::pow10(0u64), 1u64);
@@ -980,6 +992,39 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
     }
 }
 
+// The ASCII base plus a decimal remainder stays in the byte range.
+theorem decimal_remainder_byte_lower_bound(q: uint64) {
+    ensures 48u8 <= ((48u64 + q % 10u64) as uint8) by {
+        apply(integer::uint64_remainder_to_integer(q, 10u64));
+        apply(integer::positive_divisor_remainder_upper(to_integer(q), 10));
+        have to_integer(q % 10u64) <= 9 by {
+            rewrite(to_integer(q % 10u64), truncating_remainder(to_integer(q), 10));
+            close();
+        }
+        have 0 <= to_integer(q % 10u64) by { close(); }
+        have to_integer(48u64) + to_integer(q % 10u64) <= 57 by {
+            close() using { to_integer(q % 10u64) <= 9; };
+        }
+        apply(integer::uint64_add_to_integer(48u64, q % 10u64));
+        have 48 <= to_integer(48u64 + q % 10u64) by {
+            rewrite(to_integer(48u64 + q % 10u64), to_integer(48u64) + to_integer(q % 10u64));
+            close() using { 0 <= to_integer(q % 10u64); };
+        }
+        have to_integer(48u64 + q % 10u64) <= 57 by {
+            rewrite(to_integer(48u64 + q % 10u64), to_integer(48u64) + to_integer(q % 10u64));
+            close();
+        }
+        have to_integer((48u64 + q % 10u64) as uint8) == to_integer(48u64 + q % 10u64) by {
+            close() using { 48 <= to_integer(48u64 + q % 10u64); to_integer(48u64 + q % 10u64) <= 57; };
+        }
+        have 48 <= to_integer((48u64 + q % 10u64) as uint8) by {
+            rewrite(to_integer((48u64 + q % 10u64) as uint8), to_integer(48u64 + q % 10u64));
+            close();
+        }
+        close() using { 48 <= to_integer((48u64 + q % 10u64) as uint8); };
+    }
+}
+
 // Every digit is a character from '0' up, so none is the terminator.
 theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
     ensures 48u8 <= stdio::decimal_digit(v, k) by {
@@ -987,7 +1032,7 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
             apply(stdio::decimal_digit_power_nonzero(v, k));
             apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k));
             rewrite(stdio::decimal_digit(v, k), (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8);
-            close();
+            apply(stdio::decimal_remainder_byte_lower_bound(v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k)));
         } else {
             unfold(stdio::decimal_digit(v, k));
             close() using { not (k < stdio::decimal_length(v)); };

@@ -1875,7 +1875,7 @@ mod proof_fact_store_tests {
         }];
         append_surface_tactics_by_leaf(
             &mut steps,
-            &[vec![ProofTactic::Known], vec![ProofTactic::Normalize]],
+            &[vec![ProofTactic::Known], vec![ProofTactic::Enumerate]],
             Some(&[false, true]),
         )
         .unwrap();
@@ -1889,7 +1889,7 @@ mod proof_fact_store_tests {
         else {
             panic!("distinct call edges must retain the existing call split");
         };
-        assert_eq!(returned_proof.steps(), &[ProofStep::Normalize]);
+        assert_eq!(returned_proof.steps(), &[ProofStep::Enumerate]);
         assert_eq!(threw_proof.steps(), &[ProofStep::Known]);
     }
 

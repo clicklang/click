@@ -3280,10 +3280,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Known
             | ProofTactic::Close
             | ProofTactic::CloseUnreachable
-            | ProofTactic::Normalize
-            | ProofTactic::NormalizeUsing(_)
             | ProofTactic::CloseBounds(_)
-            | ProofTactic::CompatibilityNormalize(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -3408,9 +3405,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Close | ProofTactic::CloseUnreachable => "close",
         ProofTactic::Known => "known",
         ProofTactic::CloseBounds(_) => "close",
-        ProofTactic::Normalize
-        | ProofTactic::NormalizeUsing(_)
-        | ProofTactic::CompatibilityNormalize(_) => "normalize",
         ProofTactic::ArithmeticUsing(_) => "arithmetic",
         ProofTactic::Intro
         | ProofTactic::IntroAs(_)

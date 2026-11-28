@@ -185,7 +185,7 @@ selected type instance; expansion preserves the generic declaration.
 | Option | Meaning |
 | --- | --- |
 | `--claim LABEL` | Expand all smart tactics in one named claim, including one loop phase, instead of selecting a tactic by location. `--claim PATH:LINE[:COLUMN]` names the innermost claim whose clause or proof covers that line of the target. |
-| `--check-normalize-removal` | Require `--claim` and reject `normalize()` or `normalize() using` in the selected proof or its expansion. Expansion also fails if the selected proof needs a verification-only normalization fallback. A passing rewrite still has to replay with proof search disabled. |
+| `--check-normalize-removal` | Require `--claim` and reject `normalize()` or `normalize() using` in the selected proof or its expansion. A passing rewrite still has to replay with proof search disabled. |
 | `--work-limit UNITS` | Set the deterministic work budget of the whole command, generating the expansion and checking it. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound of the whole command. The default is `10m`. It stops a hung or CPU-starved run and is not a verdict about the proof; smart search inside the expansion is bounded by its deterministic smart work budget, not by a clock. |
 | `--output PATH` | Write the complete verified rewrite in the input's directory. |
@@ -220,10 +220,6 @@ reporting a missing source occurrence.
 Arithmetic expansion writes each intermediate derivation once as an ordinary
 `have`, then reuses the established fact through explicit premises. A grouped closure proves each open claim in a `have` and
 then closes each goal in contract order.
-
-If verification uses legacy normalization internally and has
-no ordinary certificate for a selected proof, expansion reports that
-limitation without rewriting the source.
 
 The command exits with status 1 and writes no requested artifact when
 selection, expansion extraction, or rewritten proof verification fails, a

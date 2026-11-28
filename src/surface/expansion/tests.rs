@@ -1,14 +1,6 @@
 use super::*;
 
 #[test]
-fn verification_only_normalization_has_no_source_expansion() {
-    let tactics = [ProofTactic::CompatibilityNormalize(None)];
-    let rendered = printing::format_partial_tactic_sequence(&tactics);
-    let error = require_surface_expansion(rendered).unwrap_err();
-    assert!(error.message().contains("used legacy normalization"));
-}
-
-#[test]
 fn expanded_addition_and_subtraction_preserve_association() {
     for operations in [" - 1".repeat(20), " - 1 + 1".repeat(20)] {
         let expression = format!("value{operations} - (other - 1)");

@@ -352,11 +352,11 @@ fn both_and_scopes_are_isolated_check_lineage_and_scale() {
                     .focus_branch(ids[0])
                     .unwrap()
                     .driver()
-                    .apply_step(ProofStep::Normalize)
+                    .apply_step(ProofStep::Known)
                     .unwrap();
                 let right = left_done.focus_branch(ids[1]).unwrap();
                 assert!(!right.facts().contains(&truth));
-                let done = right.driver().apply_step(ProofStep::Normalize).unwrap();
+                let done = right.driver().apply_step(ProofStep::Known).unwrap();
                 let joined = done.join_focused_both(&marker, split, ids).unwrap();
                 (joined, split_proof, left_done, marker, split, ids)
             });
@@ -367,7 +367,7 @@ fn both_and_scopes_are_isolated_check_lineage_and_scale() {
             .focus_branch(ids[1])
             .unwrap()
             .driver()
-            .apply_step(ProofStep::Normalize)
+            .apply_step(ProofStep::Known)
             .unwrap();
         assert!(
             done.join_focused_both(&foreign.checkpoint(), foreign_split, foreign_ids)
@@ -704,7 +704,7 @@ fn explicit_loop_have_checks_complete_invariant_bundle() {
         let body_kernel = root.lower_surface_goal(&body_surface, "test body").unwrap();
         let scope = root.driver().open_have(surface.clone()).unwrap();
         assert!(scope.clone().join().is_err());
-        let closed = scope.driver().apply_step(ProofStep::Normalize).unwrap();
+        let closed = scope.driver().apply_step(ProofStep::Known).unwrap();
         let (joined, work) =
             crate::instrumentation::measure_deterministic_work(|| closed.join().unwrap());
         samples.push(work);
@@ -724,7 +724,7 @@ fn explicit_loop_have_checks_complete_invariant_bundle() {
             .driver()
             .apply_step(ProofStep::Have {
                 proposition: surface.clone(),
-                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
             })
             .unwrap();
         assert!(explicit.facts().contains(&body_kernel));
@@ -822,7 +822,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
         );
         let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
             root.driver()
-                .apply_close_invariants_body(&[ProofTactic::Normalize], None, false)
+                .apply_close_invariants_body(&[ProofTactic::Known], None, false)
                 .unwrap()
         });
         assert!(root.certificate().steps().is_empty());
@@ -865,7 +865,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
         assert!(
             closed
                 .driver()
-                .apply_close_invariants_body(&[ProofTactic::Normalize], None, false)
+                .apply_close_invariants_body(&[ProofTactic::Known], None, false)
                 .is_err()
         );
         assert!(

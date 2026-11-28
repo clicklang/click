@@ -14,17 +14,9 @@ pub(in crate::surface) fn computes_with_known(goal: &Proposition) -> bool {
     }
 }
 
-/// Choose a goal-local closer without enlarging `known`'s checking rules.
-/// The broad legacy normalization fallback remains explicit when computation
-/// alone cannot close the goal.
+/// Choose a goal-local closer when the ordinary checker can compute it.
 pub(in crate::surface) fn plan_context_free_closer(goal: &Proposition) -> Option<ProofTactic> {
-    if computes_with_known(goal) {
-        Some(ProofTactic::Known)
-    } else if normalizes_context_free(goal) {
-        Some(ProofTactic::CompatibilityNormalize(None))
-    } else {
-        None
-    }
+    computes_with_known(goal).then_some(ProofTactic::Known)
 }
 
 /// The single explicit-certificate search shared by every smart-simplification
@@ -241,8 +233,8 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
 /// vocabulary cannot write is a search failure, not a lowering error.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) enum SolveEvidence {
-    /// The goal normalizes to true without consulting any context.
-    Normalize,
+    /// A goal-local computation may produce a checked certificate.
+    GoalLocal,
     /// A kernel derivation of the goal from its context premises.
     Derivation(PropositionDerivation),
 }
@@ -255,7 +247,7 @@ pub(in crate::surface) fn plan_solve_certificate(
         normalize_proposition(proposition),
         NormalizedProposition::True
     ) {
-        Some(SolveEvidence::Normalize)
+        Some(SolveEvidence::GoalLocal)
     } else {
         Some(SolveEvidence::Derivation(
             crate::kernel::search::ProofSearch::derive_solve_proposition(assumptions, proposition)?,

@@ -299,7 +299,10 @@ int fill_parallel(int output[4]) {
                 instantiate(forall (j: int32) { first_job.begin <= j and j < first_job.end implies first_job.output[j] == first_job.value }, 1);
                 close();
             }
-            have output[0] == 11;
+            have output[0] == 11 by {
+                instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, 0);
+                close();
+            }
             have output[1] == 11 by {
                 instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, 1);
                 close();
@@ -340,7 +343,10 @@ int fill_parallel(int output[4]) {
         instantiate(forall (j: int32) { first_job.begin <= j and j < first_job.end implies first_job.output[j] == first_job.value }, 1);
         close();
     }
-    have output[0] == 11;
+    have output[0] == 11 by {
+        instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, 0);
+        close();
+    }
     have output[1] == 11 by {
         instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, 1);
         close();
@@ -361,8 +367,14 @@ int fill_parallel(int output[4]) {
         instantiate(forall (j: int32) { second_job.begin <= j and j < second_job.end implies second_job.output[j] == second_job.value }, 3);
         close();
     }
-    have output[2] == 22;
-    have output[3] == 22;
+    have output[2] == 22 by {
+        instantiate(forall (j: int32) { 2 <= j and j < 4 implies output[j] == 22 }, 2);
+        close();
+    }
+    have output[3] == 22 by {
+        instantiate(forall (j: int32) { 2 <= j and j < 4 implies output[j] == 22 }, 3);
+        close();
+    }
     step_until(function.exit);
     close();
 }

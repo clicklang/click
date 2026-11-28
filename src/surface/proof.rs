@@ -664,8 +664,8 @@ mod certificate_tests {
         };
         let known = ProofCertificate::from_proof_tactics(&[ProofTactic::Known])
             .expect("known is a certificate");
-        let normalize = ProofCertificate::from_proof_tactics(&[ProofTactic::Normalize])
-            .expect("normalize is a certificate");
+        let enumerate = ProofCertificate::from_proof_tactics(&[ProofTactic::Enumerate])
+            .expect("enumerate is a certificate");
 
         let merged = merge_path_aligned_certificates(
             "branching",
@@ -686,7 +686,7 @@ mod certificate_tests {
                         match_arm: None,
                     }],
                     case_offsets: None,
-                    certificate: normalize,
+                    certificate: enumerate,
                 },
             ],
         )
@@ -705,7 +705,7 @@ mod certificate_tests {
         };
         assert_eq!(merged_condition, &condition);
         assert_eq!(then_proof.to_proof_tactics(), vec![ProofTactic::Known]);
-        assert_eq!(else_proof.to_proof_tactics(), vec![ProofTactic::Normalize]);
+        assert_eq!(else_proof.to_proof_tactics(), vec![ProofTactic::Enumerate]);
     }
 
     #[test]
@@ -726,8 +726,8 @@ mod certificate_tests {
         };
         let known = ProofCertificate::from_proof_tactics(&[ProofTactic::Known])
             .expect("known is a certificate");
-        let normalize = ProofCertificate::from_proof_tactics(&[ProofTactic::Normalize])
-            .expect("normalize is a certificate");
+        let enumerate = ProofCertificate::from_proof_tactics(&[ProofTactic::Enumerate])
+            .expect("enumerate is a certificate");
 
         let error = merge_path_aligned_certificates(
             "branching",
@@ -748,7 +748,7 @@ mod certificate_tests {
                         match_arm: None,
                     }],
                     case_offsets: None,
-                    certificate: normalize,
+                    certificate: enumerate,
                 },
             ],
         )

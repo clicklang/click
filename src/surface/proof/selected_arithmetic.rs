@@ -276,18 +276,15 @@ struct RewriteBudget {
 /// How the rewrite search closes each goal it reaches.
 #[derive(Clone, Copy)]
 pub(in crate::surface::proof) enum RewriteClosers<'p> {
-    /// `known`, `normalize`, the direct logical closer, then a
-    /// bounded nested `solve`: the context's facts.
+    /// Check the goal against the context, then try a bounded nested `solve`.
     Ambient,
     /// The early goal-local route: direct/typed closure and optional
     /// function unfolding, without restarting all of `solve` before arithmetic.
     GoalLocal { allow_function_unfold: bool },
-    /// The direct logical closer, `solve`'s typed atomic closer and
-    /// `normalize`, for `solve`'s own premises: no nested `solve`, which
-    /// would select the same premises and search them again.
+    /// Try direct, typed atomic, and goal-local closure on the premises that
+    /// `solve` selected, without restarting premise selection.
     Selected,
-    /// `normalize` and an atomic plan over these premises alone, for
-    /// `close() using`, which reads no ambient fact.
+    /// Try a goal-local or atomic proof from the listed premises.
     Listed(&'p [(Proposition, SyntaxProposition)]),
     /// A replayable rewrite chain closes with the selected fact or direct
     /// computation once its rewrites have exposed it.
