@@ -32,17 +32,16 @@ struct Block {
     names: Vec<String>,
 }
 
-/// The name a generic resource's instance at `arguments` is written out as.
-pub(super) fn instance_name(resource: &str, arguments: &[String]) -> String {
+/// The generated definition and its uses share the resource's source name.
+fn instance_name(resource: &str, arguments: &[String]) -> String {
     if let Some(name) = super::cpp_class_objects::object_resource_instance(resource, arguments) {
         return name;
     }
-    let mut name = resource.to_string();
-    for argument in arguments {
-        // A C++ argument of two words, `unsigned int`, is one identifier.
-        crate::languages::rust::names::push_type_argument(&mut name, &argument.replace(' ', "_"));
-    }
-    name
+    let arguments = arguments
+        .iter()
+        .map(|argument| crate::languages::rust::names::display_rust_names(argument))
+        .collect::<Vec<_>>();
+    format!("{resource}<{}>", arguments.join(", "))
 }
 
 /// Whether a Rust type argument is concrete, not an abstract type: a scalar,
@@ -352,7 +351,7 @@ fn use_at(
 
 /// The generic resource `block`, `name`, written out at `arguments`: its
 /// parameters and body with each type parameter read as its argument, and
-/// its abstract arguments bound, `resource cell_A1_T<T>(...)`.
+/// its abstract arguments bound. The instance name occupies a single token.
 fn instance(
     source: &[Spanned],
     block: &Block,
@@ -421,4 +420,41 @@ fn instance(
         index += 1;
     }
     tokens
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generic_resource_names_use_the_written_type_arguments() {
+        let source = "resource nodes<T>(p: *mut T) {} \
+                      resource nodes_A1_T(p: i32) {} \
+                      owns nodes<T>(p); owns nodes<i32>(p);";
+        let (tokens, positions) = tokenizer::tokenize(source, None).unwrap();
+        let (tokens, _, _) = expand_generic_resources(
+            tokens,
+            positions,
+            BTreeSet::new(),
+            rust_concrete,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        for (name, occurrences) in [("nodes<T>", 2), ("nodes<i32>", 2), ("nodes_A1_T", 1)] {
+            let token = Token::Ident(name.into());
+            assert_eq!(
+                tokens
+                    .iter()
+                    .filter(|candidate| **candidate == token)
+                    .count(),
+                occurrences,
+                "{name}"
+            );
+        }
+
+        assert_eq!(
+            instance_name("nodes", &["unsigned long".into(), "int".into()]),
+            "nodes<unsigned long, int>"
+        );
+    }
 }

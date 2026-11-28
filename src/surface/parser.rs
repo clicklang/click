@@ -4161,8 +4161,8 @@ impl Parser {
         {
             return Err(self.error("a resource's type parameters are abstract types"));
         }
-        // A C++ generic resource's instance at abstract arguments binds them,
-        // `resource nodes_A1_T<T>(...)`.
+        // A C++ generic resource's instance at abstract arguments binds them
+        // after the token naming the instance.
         if self.verifies_cpp() && self.peek() == Some(&Token::LessThan) {
             self.position += 1;
             loop {
