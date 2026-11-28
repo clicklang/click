@@ -5410,11 +5410,16 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
         let requires = (1..=size)
             .map(|k| format!("    requires x != {k};\n"))
             .collect::<String>();
+        // Establish each requirement at the frontier from the same bound.
+        // This measures checking the call's requirements at every size.
+        let evidence = (1..=size)
+            .map(|k| format!("    have x != {k} by close() using {{ x > {size}; }};\n"))
+            .collect::<String>();
         let click_source = format!(
             "verifying \"many_requires.c\";\n\n\
              extern int32 g(int32 x) {{\n{requires}    ensures result == x;\n}}\n\n\
-             int32 caller(int32 x) {{\n    requires x > {size};\n    ensures result == x;\n}} by {{\n    \
-             step();\n    step();\n    close();\n}}\n"
+             int32 caller(int32 x) {{\n    requires x > {size};\n    ensures result == x;\n}} by {{\n\
+             {evidence}    step();\n    step();\n    close();\n}}\n"
         );
         let rebuilds_before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
         let (verified, sample) = scaling_sample(size, || {
