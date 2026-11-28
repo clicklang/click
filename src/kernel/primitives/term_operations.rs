@@ -3702,54 +3702,20 @@ impl OldConditionTerm {
     }
 
     pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
-        Self::reduced_pointer_equality(&left, &right)
-            .unwrap_or_else(|| Self::PointerEqual(Box::new(left), Box::new(right)))
+        match left.equality_kind(&right) {
+            PointerEqualityKind::Complete => Self::PointerEqual(Box::new(left), Box::new(right)),
+            PointerEqualityKind::Address => {
+                Self::address_equal(left.address().clone(), right.address().clone())
+            }
+            PointerEqualityKind::IntegerAddress => Self::integer_address_equality(&left, &right),
+        }
     }
 
-    /// A simpler condition when comparing the complete pointer values reduces
-    /// to comparing their coordinates.
-    pub(crate) fn reduced_pointer_equality(left: &Pointer, right: &Pointer) -> Option<Self> {
-        // A wide pointer's equality also compares its metadata
-        // (`design/rust-slice-values.md`, "Equality"), which no address
-        // equality states and a condition has no conjunction for: it stays
-        // the complete equality, whose admission merges the counts too.
-        if left.is_wide() || right.is_wide() {
-            return None;
-        }
-        // A pointer equal to the null pointer is null: a comparison with null
-        // states address equality, as `p == 0` lowers
-        // (`surface::lowering::comparison_proposition`). Every producer
-        // builds that one term.
-        if left.is_null() || right.is_null() {
-            return Some(Self::address_equal(
-                left.address().clone(),
-                right.address().clone(),
-            ));
-        }
-        if left.same_provenance_as(right)
-            || (matches!(left.program_type(), ProgramType::FunctionPointer(_))
-                && matches!(right.program_type(), ProgramType::FunctionPointer(_)))
-        {
-            // With the complete pointer domain already identical, only the
-            // numeric coordinates remain. A logical word cast's coordinates
-            // use the same uint64 classes as its original word. Keep this
-            // reduction out of raw pointer equality, which provenance checks
-            // also use: numbers alone must never supply a pointer domain.
-            if left.address().integer_address_bits().is_some()
-                || right.address().integer_address_bits().is_some()
-            {
-                return Some(Self::uint64_equal(
-                    OldMachineTerm::integer_address(left.address().clone()),
-                    OldMachineTerm::integer_address(right.address().clone()),
-                ));
-            }
-            Some(Self::address_equal(
-                left.address().clone(),
-                right.address().clone(),
-            ))
-        } else {
-            None
-        }
+    pub(crate) fn integer_address_equality(left: &Pointer, right: &Pointer) -> Self {
+        Self::uint64_equal(
+            OldMachineTerm::integer_address(left.address().clone()),
+            OldMachineTerm::integer_address(right.address().clone()),
+        )
     }
 
     pub fn address_equal(left: Address, right: Address) -> Self {
@@ -4628,7 +4594,36 @@ impl SharedPureApplication {
     }
 }
 
+pub(crate) enum PointerEqualityKind {
+    Complete,
+    Address,
+    IntegerAddress,
+}
+
 impl Pointer {
+    pub(crate) fn equality_kind(&self, other: &Self) -> PointerEqualityKind {
+        // A wide pointer comparison includes its element count, even against null.
+        if self.is_wide() || other.is_wide() {
+            return PointerEqualityKind::Complete;
+        }
+        if self.is_null() || other.is_null() {
+            return PointerEqualityKind::Address;
+        }
+        if self.same_provenance_as(other)
+            || (matches!(self.program_type(), ProgramType::FunctionPointer(_))
+                && matches!(other.program_type(), ProgramType::FunctionPointer(_)))
+        {
+            // Once the domain agrees, use the original word of an integer cast.
+            if self.address().integer_address_bits().is_some()
+                || other.address().integer_address_bits().is_some()
+            {
+                return PointerEqualityKind::IntegerAddress;
+            }
+            return PointerEqualityKind::Address;
+        }
+        PointerEqualityKind::Complete
+    }
+
     /// Comparing offsets decides complete pointer equality only when the base,
     /// provenance and element counts already agree.
     pub(crate) fn equality_offset_sides<'a>(
