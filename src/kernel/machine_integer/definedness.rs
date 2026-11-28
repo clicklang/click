@@ -45,17 +45,21 @@ pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Pr
 }
 
 pub(crate) fn ordinary_bounds(format: MachineIntegerType, exact: IntegerTerm) -> [Proposition; 2] {
+    use crate::kernel::{IntegerComparisonOperator, SharedIntegerTerm, StoredConditionTerm};
+    let exact = SharedIntegerTerm::from(exact);
     let (minimum, maximum) = range::range(format);
     [
-        Proposition::condition_is(
-            OldConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
-            true,
-        ),
-        Proposition::condition_is(
-            OldConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
-            true,
-        ),
+        (IntegerComparisonOperator::LessEqual, maximum),
+        (IntegerComparisonOperator::GreaterEqual, minimum),
     ]
+    .map(|(operator, limit)| {
+        let condition = StoredConditionTerm::integer_comparison(
+            operator,
+            exact.clone(),
+            IntegerTerm::constant(limit).into(),
+        );
+        Proposition::condition_is(condition, true)
+    })
 }
 
 /// The definedness fact whose Integer bound
