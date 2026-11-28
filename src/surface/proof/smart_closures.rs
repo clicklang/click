@@ -3665,24 +3665,33 @@ impl<'a> Proof<'a> {
                 return None;
             };
             let segment = entry.ranges.get(range)?;
+            // A slice parameter's range `bytes[0..bytes.len()]`, once a
+            // local hides `bytes`, is the parameter's at entry.
             let ContractSegmentSurface::Range {
-                end: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(length)),
+                end: SyntaxTerm::ProgramExpression(ProgramExpression::SliceLength(slice)),
                 ..
             } = &segment.surface
             else {
                 return None;
             };
-            let slice = length.slice_length_of()?;
-            let name = crate::kernel::BindingName::scoped_slice_length(slice, true);
-            (execution.core.state.locals().resolve_binding(&name) != *length).then(|| {
-                ResourceSubject::At {
+            let ProgramExpression::Variable(name @ crate::kernel::BindingName::Named(_)) =
+                slice.as_ref()
+            else {
+                return None;
+            };
+            execution
+                .core
+                .state
+                .locals()
+                .visible_local_declaration(name.source_name())
+                .is_some()
+                .then(|| ResourceSubject::At {
                     selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
                         region: CodeRegionRef::Function,
                         kind: ProgramPointKind::Entry,
                     }),
                     resource: Box::new(ResourceSubject::Memory(segment.clone())),
-                }
-            })
+                })
         };
         if let Some(source) = source_at_entry(required_left) {
             *left = source;

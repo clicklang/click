@@ -17,7 +17,6 @@ impl ProgramParameter {
             constant: false,
             pointee_constant: false,
             pointee_class: None,
-            slice_length_parameter: None,
             fixed_reference_bounds: None,
         }
     }
@@ -27,11 +26,6 @@ impl ProgramParameter {
     }
     pub fn binding_name(&self) -> &BindingName {
         self.name.binding()
-    }
-
-    pub(crate) fn with_slice_length_parameter(mut self, parameter: usize) -> Self {
-        self.slice_length_parameter = Some(parameter);
-        self
     }
 
     pub(crate) fn with_fixed_reference_bounds(mut self, bytes: impl Into<LayoutSize>) -> Self {

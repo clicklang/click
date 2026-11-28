@@ -4173,6 +4173,9 @@ fn fresh_loop_local_value(
             algebraic_type: parameter.algebraic_type(),
             node: AlgebraicTermNode::Variable(variable),
         })),
+        // A slice local reassigned in the body is a fresh slice, its data
+        // pointer and count named by the one variable.
+        ProgramType::SlicePointer(_) => crate::kernel::symbolic_call_result(program_type, variable),
         // A pointer local reassigned in the body (`p = p + 1`) must not keep
         // its entry value across the abstract iteration, exactly as the join
         // abstraction treats it; an invariant must relate it.

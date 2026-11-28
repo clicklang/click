@@ -95,7 +95,7 @@ enum LocalBindingKind {
     RangeStart,
     RangeEnd,
     CompoundLiteral,
-    SliceComponent { length: bool },
+    SliceComponent,
     ReturnPlace,
 }
 
@@ -184,27 +184,10 @@ impl LocalBindingId {
         Self::new_unnamed(owner, ordinal, LocalBindingKind::CompoundLiteral)
     }
 
-    /// Runtime storage for one component of a Rust slice pair.
+    /// Runtime storage for one slice of a Rust pair of slices, as
+    /// `split_at` returns: one wide value (`design/rust-slice-values.md`).
     pub(crate) fn slice_component(owner: LocalFunctionId, ordinal: u32) -> Self {
-        Self::new_unnamed(
-            owner,
-            ordinal,
-            LocalBindingKind::SliceComponent { length: false },
-        )
-    }
-
-    pub(crate) fn slice_component_length(&self) -> Option<Self> {
-        matches!(
-            self.0.kind,
-            LocalBindingKind::SliceComponent { length: false }
-        )
-        .then(|| {
-            Self::new_unnamed(
-                self.0.owner.clone(),
-                self.0.ordinal,
-                LocalBindingKind::SliceComponent { length: true },
-            )
-        })
+        Self::new_unnamed(owner, ordinal, LocalBindingKind::SliceComponent)
     }
 
     pub(crate) fn return_place(owner: LocalFunctionId) -> Self {
@@ -376,7 +359,7 @@ impl LocalBindingId {
             self.0.kind,
             LocalBindingKind::Temporary
                 | LocalBindingKind::PreparedArgument
-                | LocalBindingKind::SliceComponent { .. }
+                | LocalBindingKind::SliceComponent
         )
     }
 
@@ -496,8 +479,10 @@ impl Hash for LocalBindingId {
             LocalBindingKind::RangeStart => (&self.0.owner, 11u8, self.0.ordinal).hash(state),
             LocalBindingKind::RangeEnd => (&self.0.owner, 12u8, self.0.ordinal).hash(state),
             LocalBindingKind::CompoundLiteral => (&self.0.owner, 13u8, self.0.ordinal).hash(state),
-            LocalBindingKind::SliceComponent { length } => {
-                (&self.0.owner, 14u8, self.0.ordinal, length).hash(state)
+            // Hashed as the slice half of the retired pointer and length
+            // pair was, so every other hash stays as it was.
+            LocalBindingKind::SliceComponent => {
+                (&self.0.owner, 14u8, self.0.ordinal, false).hash(state)
             }
             LocalBindingKind::ReturnPlace => (&self.0.owner, 15u8).hash(state),
         }
@@ -872,79 +857,6 @@ pub enum BindingName {
     /// The address carrying a reference binding. The referent's binding is
     /// structural identity; an address-looking source string is never a carrier.
     ReferenceCarrier(Arc<BindingName>),
-    /// The length component of a Rust slice binding.
-    SliceLength(SliceLengthBinding),
-}
-
-#[derive(Clone, Debug)]
-pub struct SliceLengthBinding(Arc<SliceLengthMetadata>);
-
-#[derive(Debug)]
-struct SliceLengthMetadata {
-    owner: SliceLengthOwner,
-    /// Proof spelling for interfaces that also carry presentation names.
-    spelling: Arc<str>,
-}
-
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum SliceLengthOwner {
-    Parameter(Arc<str>),
-    Local(LocalBindingId),
-    LexicalLocal(LocalBindingId),
-    Source(Arc<str>),
-}
-
-impl SliceLengthBinding {
-    pub(super) fn parameter(&self) -> Option<&str> {
-        match &self.0.owner {
-            SliceLengthOwner::Parameter(name) => Some(name),
-            _ => None,
-        }
-    }
-
-    pub(super) fn local(&self) -> Option<&LocalBindingId> {
-        match &self.0.owner {
-            SliceLengthOwner::Local(declaration) | SliceLengthOwner::LexicalLocal(declaration) => {
-                Some(declaration)
-            }
-            _ => None,
-        }
-    }
-}
-
-impl std::fmt::Display for SliceLengthBinding {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0.spelling)
-    }
-}
-
-impl PartialEq for SliceLengthBinding {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || self.0.owner == other.0.owner
-    }
-}
-impl Eq for SliceLengthBinding {}
-impl PartialOrd for SliceLengthBinding {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for SliceLengthBinding {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.owner.cmp(&other.0.owner)
-    }
-}
-impl Hash for SliceLengthBinding {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match &self.0.owner {
-            // Preserve the existing parameter-slot hash.
-            SliceLengthOwner::Parameter(name) => name.hash(state),
-            SliceLengthOwner::Local(declaration) | SliceLengthOwner::LexicalLocal(declaration) => {
-                declaration.hash(state);
-            }
-            SliceLengthOwner::Source(name) => name.hash(state),
-        }
-    }
 }
 
 impl AddressBase {
@@ -955,7 +867,6 @@ impl AddressBase {
             Self::Load(load) | Self::SliceData(load) => return Some(load.payload_id()),
             Self::AutomaticLocal { binding, .. } => Arc::as_ptr(&binding.0).cast::<()>(),
             Self::StaticObject { binding } => Arc::as_ptr(&binding.0).cast(),
-            Self::SliceLength { slice, .. } => Arc::as_ptr(&slice.0).cast(),
             Self::ReferenceCarrier { referent, .. } => Arc::as_ptr(referent).cast(),
             _ => return None,
         };
@@ -964,70 +875,6 @@ impl AddressBase {
 }
 
 impl BindingName {
-    pub(crate) fn slice_length(slice: &str) -> Self {
-        Self::slice_length_binding(SliceLengthOwner::Parameter(Arc::from(slice)), slice, false)
-    }
-    pub(crate) fn local_slice_length(declaration: LocalBindingId) -> Self {
-        let place = declaration.spelling().expect("Rust slice place");
-        Self::slice_length_binding(SliceLengthOwner::Local(declaration.clone()), place, false)
-    }
-    pub(crate) fn lexical_local_slice_length(
-        declaration: &LocalBindingId,
-        qualified: bool,
-    ) -> Self {
-        Self::slice_length_binding(
-            SliceLengthOwner::LexicalLocal(declaration.clone()),
-            declaration.spelling().expect("Rust slice place"),
-            qualified,
-        )
-    }
-    pub(crate) fn scoped_slice_length(slice: &str, qualified: bool) -> Self {
-        Self::slice_length_binding(SliceLengthOwner::Source(Arc::from(slice)), slice, qualified)
-    }
-    fn slice_length_binding(owner: SliceLengthOwner, slice: &str, qualified: bool) -> Self {
-        let prefix = if qualified { "program::" } else { "" };
-        Self::SliceLength(SliceLengthBinding(Arc::new(SliceLengthMetadata {
-            owner,
-            spelling: Arc::from(format!("{prefix}{slice}.len()")),
-        })))
-    }
-
-    /// A written read of a slice whose source spelling names several declarations.
-    pub(crate) fn source_slice_length(&self) -> Option<Self> {
-        let Self::SliceLength(length) = self else {
-            return None;
-        };
-        let SliceLengthOwner::LexicalLocal(declaration) = &length.0.owner else {
-            return None;
-        };
-        let place = declaration.spelling()?;
-        Some(Self::scoped_slice_length(place, false))
-    }
-
-    pub(crate) fn unresolved_slice_length(&self) -> Option<&str> {
-        let Self::SliceLength(length) = self else {
-            return None;
-        };
-        match &length.0.owner {
-            SliceLengthOwner::Source(place) => Some(place),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn slice_length_of(&self) -> Option<&str> {
-        match self {
-            Self::SliceLength(length) => length.parameter(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn slice_length_local(&self) -> Option<&LocalBindingId> {
-        match self {
-            Self::SliceLength(length) => length.local(),
-            _ => None,
-        }
-    }
-
     pub fn reference_carrier(referent: impl Into<BindingName>) -> Self {
         Self::ReferenceCarrier(Arc::new(referent.into()))
     }
@@ -1038,17 +885,6 @@ impl BindingName {
     /// Key for Surface tables that carry parameter metadata by proof spelling.
     pub(crate) fn metadata_name(&self) -> Option<&str> {
         match self {
-            Self::SliceLength(length) if length.parameter().is_some() => Some(&length.0.spelling),
-            // A qualified read can resolve to the input parameter once a
-            // shadowing local has left scope. Retain the parameter metadata
-            // for that case, ahead of resolving the proof point.
-            Self::SliceLength(length) if self.unresolved_slice_length().is_some() => Some(
-                length
-                    .0
-                    .spelling
-                    .strip_prefix("program::")
-                    .unwrap_or(&length.0.spelling),
-            ),
             _ => self.unresolved_name(),
         }
     }
@@ -1074,7 +910,6 @@ impl BindingName {
             Self::Local(id) => id.spelling(),
             Self::Static(id) => Some(id.spelling()),
             Self::ReferenceCarrier(_)
-            | Self::SliceLength(_)
             | Self::ContractResult
             | Self::ContractException
             | Self::Generated(_) => None,
@@ -1083,7 +918,6 @@ impl BindingName {
     pub fn source_name(&self) -> &str {
         match self {
             Self::Named(name) => name,
-            Self::SliceLength(length) => &length.0.spelling,
             Self::ReferenceCarrier(referent) => referent.source_name(),
             Self::Local(id) => id.spelling().unwrap_or(""),
             Self::Static(id) => id.spelling(),
@@ -1102,7 +936,6 @@ impl BindingName {
         match self {
             Self::Local(id) => id.program_type(),
             Self::Static(id) => id.program_type(),
-            Self::SliceLength(_) => Some(ProgramType::UInt64),
             _ => None,
         }
     }
@@ -1165,7 +998,6 @@ impl From<BindingName> for BindingDeclaration {
             BindingName::ContractResult => Some(Arc::from("result")),
             BindingName::ContractException => Some(Arc::from("exception")),
             BindingName::Generated(_) => None,
-            BindingName::SliceLength(length) => Some(length.0.spelling.clone()),
             BindingName::ReferenceCarrier(referent) => Some(Arc::from(referent.source_name())),
         };
         let scope_depth = reference.local_id().map_or(0, LocalBindingId::scope_depth);
@@ -1276,7 +1108,6 @@ impl std::fmt::Display for BindingName {
             Self::ContractResult => f.write_str("result"),
             Self::ContractException => f.write_str("exception"),
             Self::Generated(id) => id.fmt(f),
-            Self::SliceLength(length) => f.write_str(&length.0.spelling),
         }
     }
 }

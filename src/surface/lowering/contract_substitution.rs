@@ -5084,7 +5084,9 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
         )),
         SyntaxTerm::If { .. } | SyntaxTerm::RangeFold { .. } | SyntaxTerm::Let { .. } => None,
         SyntaxTerm::MethodCall { .. } => None,
-        SyntaxTerm::Call { .. } => None,
+        SyntaxTerm::Call { name, arguments } => {
+            rust_slice_component_program_expression(name, arguments)
+        }
     }
 }
 
@@ -5236,7 +5238,9 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
         )),
         SyntaxTerm::If { .. } | SyntaxTerm::RangeFold { .. } | SyntaxTerm::Let { .. } => None,
         SyntaxTerm::MethodCall { .. } => None,
-        SyntaxTerm::Call { .. } => None,
+        SyntaxTerm::Call { name, arguments } => {
+            rust_slice_component_program_expression(name, arguments)
+        }
     }
 }
 
@@ -5476,5 +5480,28 @@ mod tests {
             rewrite_contract_expression_exact(&expression, &source_base, &target, false);
         assert!(!changed);
         assert_eq!(rewritten, expression);
+    }
+}
+
+/// A Rust slice's component read where the program resolves the slice,
+/// `bytes.len()` or `bytes.as_ptr()` for a slice local hiding a slice
+/// parameter: as a C expression it names the binding the program resolves at
+/// the point it is evaluated (`design/rust-slice-values.md`, step 3b).
+fn rust_slice_component_program_expression(
+    name: &str,
+    arguments: &[SyntaxTerm],
+) -> Option<ProgramExpression> {
+    let [SyntaxTerm::ProgramBinding(slice)] = arguments else {
+        return None;
+    };
+    let slice = Box::new(ProgramExpression::Variable(slice.as_str().into()));
+    match name {
+        crate::surface::RUST_SLICE_LEN | crate::surface::RUST_STR_LEN => {
+            Some(ProgramExpression::SliceLength(slice))
+        }
+        crate::surface::RUST_SLICE_AS_PTR | crate::surface::RUST_STR_AS_PTR => {
+            Some(ProgramExpression::SliceData(slice))
+        }
+        _ => None,
     }
 }

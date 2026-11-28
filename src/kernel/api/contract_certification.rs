@@ -1626,7 +1626,7 @@ fn program_function_contract_entry_facts(
         function.parameters(),
         function.contract_interface().value_parameters(),
     ] {
-        for (index, parameter) in parameters.iter().enumerate() {
+        for parameter in parameters {
             if let Some(bytes) = parameter.fixed_reference_bounds {
                 let pointer_value = entry_state
                     .locals
@@ -1646,32 +1646,29 @@ fn program_function_contract_entry_facts(
                         entry_facts.assume(assumptions, ContractEntryFactOrigin::Bounds, coverage);
                 }
             }
-            let Some(length_index) = parameter.slice_length_parameter else {
+            // A slice parameter is one wide pointer: its facts are stated
+            // over its components (`design/rust-slice-values.md`, step 3b).
+            let ProgramType::SlicePointer(element) = parameter.program_type() else {
                 continue;
             };
-            let pointer_value = entry_state
+            let slice_value = entry_state
                 .locals
                 .get_native(parameter.binding_name().clone());
-            let Some(ProgramValue::Pointer(pointer)) = pointer_value.as_deref() else {
+            let Some(ProgramValue::Pointer(slice)) = slice_value.as_deref() else {
                 return Err(ContractEntryRefusal::Internal(
                     "slice entry argument is not a pointer value".into(),
                 ));
             };
-            let length_parameter = &parameters[index + length_index];
-            let length_value = entry_state
-                .locals
-                .get_native(length_parameter.binding_name());
-            let Some(ProgramValue::UInt64(length)) =
-                length_value.as_deref().map(ProgramValue::numeric_value)
-            else {
+            let Some(length) = slice.len() else {
                 return Err(ContractEntryRefusal::Internal(
-                    "slice entry length is not a native unsigned value".into(),
+                    "slice entry argument has no element count".into(),
                 ));
             };
-            let width = parameter
-                .program_type()
+            let pointer = &slice.as_ptr();
+            let width = element
+                .thin_pointer_type()
                 .pointee_type()
-                .expect("slice pointer")
+                .expect("a slice's thin part has a pointee")
                 .byte_width();
             assumptions = entry_facts.assume(
                 assumptions,

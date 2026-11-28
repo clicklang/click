@@ -9064,19 +9064,6 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecExpression, String> {
         let name = name.into();
         crate::instrumentation::record_deterministic_work(1);
-        let name = if name.unresolved_slice_length().is_some() {
-            let state = environment
-                .reference_state
-                .as_ref()
-                .or(if environment.at_function_entry {
-                    Some(self.entry_state)
-                } else {
-                    self.local_type_state
-                });
-            state.map_or(name.clone(), |state| state.locals().resolve_binding(&name))
-        } else {
-            name
-        };
         if let Some(id) = name.static_id() {
             let metadata = id
                 .metadata()
@@ -9117,7 +9104,7 @@ impl AnnotationLowerer<'_> {
             });
         }
 
-        if (name.local_id().is_some() || matches!(name, crate::kernel::BindingName::SliceLength(_)))
+        if name.local_id().is_some()
             && let Some(state) = environment.reference_state.as_ref().or_else(|| {
                 (environment.at_function_entry && !environment.function_contract)
                     .then_some(self.entry_state)
@@ -9169,6 +9156,27 @@ impl AnnotationLowerer<'_> {
             && let Some(value) = &environment.contract_result
         {
             return Ok(value.as_ref().clone());
+        }
+        // `program::name` is the binding the program resolves at the point
+        // read: a live local that hides a parameter of that spelling, such
+        // as a Rust `let bytes = ...` shadowing a slice parameter. One lookup.
+        if let crate::kernel::BindingName::Named(source) = &name
+            && let Some(state) = environment.reference_state.as_ref().or(
+                if matches!(environment.current_point, SpecPoint::Current) {
+                    self.local_type_state
+                } else {
+                    None
+                },
+            )
+            && let Some(id) = state.locals().visible_local_declaration(source)
+            && state
+                .local_object_type(crate::kernel::BindingName::Local(id.clone()))
+                .is_some_and(|ty| ty.is_slice_pointer())
+        {
+            return self.lower_program_binding_to_spec(
+                crate::kernel::BindingName::Local(id.clone()),
+                environment,
+            );
         }
         match name.named_in(&environment.values) {
             Some(value) => Ok(value.clone()),
@@ -9291,9 +9299,6 @@ impl AnnotationLowerer<'_> {
             match binding {
                 crate::kernel::BindingName::Generated(_) => {
                     return Err("a specification binder has no C storage address".into());
-                }
-                crate::kernel::BindingName::SliceLength(_) => {
-                    return Err("a slice length has no program storage address".into());
                 }
                 _ => {}
             }

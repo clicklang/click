@@ -153,31 +153,24 @@ fn allocation_bounds_require_positive_ownership_and_grant_no_read_permission() {
 fn slice_entry_bounds_allow_formation_without_read_authority() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_450);
-    let state = ExecutionState::new()
-        .with_local("data", ProgramValue::Pointer(p.clone()))
-        .with_local(
-            "length",
-            ProgramValue::UInt64(OldMachineTerm::uint64_constant(2)),
-        );
+    // A slice parameter is one wide pointer whose count is 2.
+    let slice = p
+        .clone()
+        .with_element_count(OldMachineTerm::uint64_constant(2));
+    let state = ExecutionState::new().with_local("data", ProgramValue::Pointer(slice.clone()));
     let function = program_function(
         ProgramType::Void,
         "slice_metadata",
-        vec![
-            program_parameter("p", ProgramType::Int32Pointer).with_slice_length_parameter(1),
-            program_parameter("n", ProgramType::UInt64),
-        ],
+        vec![program_parameter(
+            "p",
+            ProgramType::SlicePointer(crate::kernel::SliceElement::Int32),
+        )],
         program_skip(),
     );
     let entry = crate::kernel::program_function_contract_entry(
         &state,
         &function,
-        &[
-            ProgramExpression::Value(ProgramValue::Pointer(p.clone())),
-            ProgramExpression::Value(
-                ProgramValue::UInt64(OldMachineTerm::uint64_constant(2))
-                    .complete_word(Address::symbolic(Variable(930_451))),
-            ),
-        ],
+        &[ProgramExpression::Value(ProgramValue::Pointer(slice))],
     )
     .unwrap();
     let context = entry

@@ -30,7 +30,7 @@
     "diagnostic": "local `i` has no value at this frontier",
     "migrated_sidecar": "design/charon-trial/loop-headers/sum-proof.click",
     "frozen_sidecar": "design/charon-trial/loop-headers/sum.click",
-    "frozen_sha256": "8ce34530fd9b66a26e66a6f2b4584302b7fc47a7959c486d5353a933fca7639f",
+    "frozen_sha256": "88a60ec51844df0ece5cc2e6eada407240c9667fdf078a10d489c4633a24dfbf",
     "original_sha256": "1afb6f97d57a035f80f0ec44493ad3494592af572349068f500c05d76e740149"
   },
   {
@@ -39,7 +39,7 @@
     "diagnostic": "`close() using` could not prove the current goal from only its listed premises",
     "migrated_sidecar": "design/charon-trial/chunk-proof/chunks.click",
     "frozen_sidecar": "design/charon-trial/chunk-proof/frozen.click",
-    "frozen_sha256": "f12e4b9c5c64aad09d128a8be7c187b3cce97934db4ae9d9f047fdacc1074a41",
+    "frozen_sha256": "3700ade59c21b0d8e3beeda0fb765fcab4341a6f12e4fa57a5db5378c06fcd4c",
     "original_sha256": "204ae1f5cd7ef4f0ceb5ed697674a9c0510300728d6964c85be45f51cbaa448c"
   },
   {

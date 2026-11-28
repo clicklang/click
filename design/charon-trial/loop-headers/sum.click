@@ -7,19 +7,19 @@ function prefix(bytes: const uint8*, end: int32) -> Integer {
 fn sum(bytes: &[u8]) -> i32 {
     requires bytes.len() <= 1000u64;
     views bytes[0..((bytes.len() as uint32) as int32)];
-    ensures to_integer(result) == old(prefix(bytes, ((bytes.len() as uint32) as int32)));
+    ensures to_integer(result) == old(prefix(bytes.as_ptr(), ((bytes.len() as uint32) as int32)));
 } by {
     step_until(region(7).entry);
-    have prefix(bytes, ((i as uint32) as int32)) == 0 by {
-        unfold(prefix(bytes, ((i as uint32) as int32))); close();
+    have prefix(bytes.as_ptr(), ((i as uint32) as int32)) == 0 by {
+        unfold(prefix(bytes.as_ptr(), ((i as uint32) as int32))); close();
     }
     have to_integer(total) == 0 by {
         close();
     }
-    have to_integer(total) == prefix(bytes, ((i as uint32) as int32)) by {
+    have to_integer(total) == prefix(bytes.as_ptr(), ((i as uint32) as int32)) by {
         close() using {
             to_integer(total) == 0;
-            prefix(bytes, ((i as uint32) as int32)) == 0;
+            prefix(bytes.as_ptr(), ((i as uint32) as int32)) == 0;
         }
     }
     loop {
@@ -29,7 +29,7 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant bytes.len() <= 1000u64;
         invariant 0 <= ((i as uint32) as int32) and 1000 >= ((i as uint32) as int32);
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(((i as uint32) as int32));
-        invariant to_integer(total) == prefix(bytes, ((i as uint32) as int32));
+        invariant to_integer(total) == prefix(bytes.as_ptr(), ((i as uint32) as int32));
         maintain by {
             have bytes.len() <= 2147483647u64 by {
                 close() using {
@@ -94,15 +94,15 @@ fn sum(bytes: &[u8]) -> i32 {
             have (((i as uint32) as int32)) < 2147483647 by {
                 apply(int32_le_lt_transitive(((i as uint32) as int32), 1000, 2147483647));
             }
-            have prefix(bytes, ((i as uint32) as int32) + 1) == prefix(bytes, ((i as uint32) as int32)) + to_integer((bytes[((i as uint32) as int32)] as int32)) by {
-                unfold(prefix(bytes, ((i as uint32) as int32) + 1));
+            have prefix(bytes.as_ptr(), ((i as uint32) as int32) + 1) == prefix(bytes.as_ptr(), ((i as uint32) as int32)) + to_integer((bytes[((i as uint32) as int32)] as int32)) by {
+                unfold(prefix(bytes.as_ptr(), ((i as uint32) as int32) + 1));
                 close();
             }
-            have to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == prefix(bytes, ((i as uint32) as int32) + 1) by {
+            have to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == prefix(bytes.as_ptr(), ((i as uint32) as int32) + 1) by {
                 close() using {
                     to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32));
-                    to_integer(total) == prefix(bytes, ((i as uint32) as int32));
-                    prefix(bytes, ((i as uint32) as int32) + 1) == prefix(bytes, ((i as uint32) as int32)) + to_integer((bytes[((i as uint32) as int32)] as int32));
+                    to_integer(total) == prefix(bytes.as_ptr(), ((i as uint32) as int32));
+                    prefix(bytes.as_ptr(), ((i as uint32) as int32) + 1) == prefix(bytes.as_ptr(), ((i as uint32) as int32)) + to_integer((bytes[((i as uint32) as int32)] as int32));
                 }
             }
             have defined(((i as uint32) as int32) + 1) by {
@@ -180,14 +180,14 @@ fn sum(bytes: &[u8]) -> i32 {
             i == bytes.len();
         }
     }
-    have prefix(bytes, ((i as uint32) as int32)) == prefix(bytes, ((bytes.len() as uint32) as int32)) by {
+    have prefix(bytes.as_ptr(), ((i as uint32) as int32)) == prefix(bytes.as_ptr(), ((bytes.len() as uint32) as int32)) by {
         rewrite((((i as uint32) as int32)), ((bytes.len() as uint32) as int32));
         close();
     }
-    have to_integer(total) == prefix(bytes, ((bytes.len() as uint32) as int32)) by {
+    have to_integer(total) == prefix(bytes.as_ptr(), ((bytes.len() as uint32) as int32)) by {
         close() using {
-            to_integer(total) == prefix(bytes, ((i as uint32) as int32));
-            prefix(bytes, ((i as uint32) as int32)) == prefix(bytes, ((bytes.len() as uint32) as int32));
+            to_integer(total) == prefix(bytes.as_ptr(), ((i as uint32) as int32));
+            prefix(bytes.as_ptr(), ((i as uint32) as int32)) == prefix(bytes.as_ptr(), ((bytes.len() as uint32) as int32));
         }
     }
     step_until(function.exit);

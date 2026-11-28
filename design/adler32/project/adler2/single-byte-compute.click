@@ -12,11 +12,11 @@ impl adler2::Adler32 {
      ensures to_integer(self.a) == to_integer((1u32 + old((bytes[0] as u32))) % 65521u32);
      ensures bytes[0] == old(bytes[0]);
      ensures to_integer(self.b) == to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32);
-     ensures to_integer(self.a) == old(adler_spec_a(bytes, 1, 1));
-     ensures to_integer(self.b) == old(adler_spec_b(bytes, 1, 1, 0));
+     ensures to_integer(self.a) == old(adler_spec_a(bytes.as_ptr(), 1, 1));
+     ensures to_integer(self.b) == old(adler_spec_b(bytes.as_ptr(), 1, 1, 0));
     } by {
 
-     apply(adler_spec_one(bytes));
+     apply(adler_spec_one(bytes.as_ptr()));
      apply(adler_byte_bounds(bytes[0]));
      have to_integer((bytes[0] as u32)) == to_integer((bytes[0] as i32)) by { close() using { 0 <= to_integer((bytes[0] as i32)); to_integer((bytes[0] as i32)) <= 255; }; }
      have 0 <= to_integer((bytes[0] as u32)) by close() using { 0 <= to_integer((bytes[0] as i32)); to_integer((bytes[0] as u32)) == to_integer((bytes[0] as i32)); };
@@ -133,7 +133,7 @@ impl adler2::Adler32 {
      }
      // Follow each serial iteration at its two accumulator updates.
      have loop(5).iter.len() == 1u64;
-     have loop(5).iter.as_slice() == old(bytes) + 0u64;
+     have loop(5).iter.as_slice() == old(bytes.as_ptr()) + 0u64;
      step_until(loop(5).statement(0).entry);
      have byte == old(bytes[0]) by { close(); }
      have a == 1u32;
@@ -194,8 +194,8 @@ impl adler2::Adler32 {
      have self.b == ((at(output_b, b) % 65521u32) as u16) by { rewrite(self.b, ((at(output_b, b) % statement(23).call(0).result) as u16)); rewrite(statement(23).call(0).result, 65521u32); close(); }
      have to_integer(self.b) == to_integer((at(output_b, b) % 65521u32)) by { rewrite(self.b, ((at(output_b, b) % 65521u32) as u16)); close() using { 0 <= to_integer((at(output_b, b) % 65521u32)); to_integer((at(output_b, b) % 65521u32)) <= 65535; }; }
      have bytes[0] == old(bytes[0]) by close() using {};
-     have old(adler_spec_a(bytes, 1, 1)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by close();
-     have old(adler_spec_b(bytes, 1, 1, 0)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by close();
+     have old(adler_spec_a(bytes.as_ptr(), 1, 1)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by close();
+     have old(adler_spec_b(bytes.as_ptr(), 1, 1, 0)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by close();
      have to_integer(self.a) == to_integer((1u32 + old((bytes[0] as u32))) % 65521u32) by {
      rewrite(to_integer(self.a), to_integer((at(output_a, a) % 65521u32)));
      rewrite((at(output_a, a) % 65521u32), (1u32 + old((bytes[0] as u32))) % 65521u32);
@@ -204,11 +204,11 @@ impl adler2::Adler32 {
      apply(integer::uint32_remainder_to_integer(1u32 + old((bytes[0] as u32)), 65521u32));
      have to_integer((1u32 + old((bytes[0] as u32))) % 65521u32) == truncating_remainder(to_integer(1u32 + old((bytes[0] as u32))), 65521) by close();
      have to_integer(1u32 + old((bytes[0] as u32))) == 1 + to_integer(old((bytes[0] as u32))) by close();
-     have to_integer(self.a) == old(adler_spec_a(bytes, 1, 1)) by {
+     have to_integer(self.a) == old(adler_spec_a(bytes.as_ptr(), 1, 1)) by {
      rewrite(to_integer(self.a), to_integer((1u32 + old((bytes[0] as u32))) % 65521u32));
      rewrite(to_integer((1u32 + old((bytes[0] as u32))) % 65521u32), truncating_remainder(to_integer(1u32 + old((bytes[0] as u32))), 65521));
      rewrite(to_integer(1u32 + old((bytes[0] as u32))), 1 + to_integer(old((bytes[0] as u32))));
-     rewrite(old(adler_spec_a(bytes, 1, 1)), truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521));
+     rewrite(old(adler_spec_a(bytes.as_ptr(), 1, 1)), truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521));
      rewrite(to_integer(old((bytes[0] as u32))), to_integer(old((bytes[0] as i32))));
      close();
      }
@@ -220,13 +220,13 @@ impl adler2::Adler32 {
      apply(integer::uint32_remainder_to_integer(393126u32 + (1u32 + old((bytes[0] as u32))), 65521u32));
      have to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32) == truncating_remainder(to_integer(393126u32 + (1u32 + old((bytes[0] as u32)))), 65521) by close();
      have to_integer(393126u32 + (1u32 + old((bytes[0] as u32)))) == 393126 + to_integer(1u32 + old((bytes[0] as u32))) by close();
-     have to_integer(self.b) == old(adler_spec_b(bytes, 1, 1, 0)) by {
+     have to_integer(self.b) == old(adler_spec_b(bytes.as_ptr(), 1, 1, 0)) by {
      rewrite(to_integer(self.b), to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32));
      rewrite(to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32), truncating_remainder(to_integer(393126u32 + (1u32 + old((bytes[0] as u32)))), 65521));
      rewrite(to_integer(393126u32 + (1u32 + old((bytes[0] as u32)))), 393126 + to_integer(1u32 + old((bytes[0] as u32))));
      rewrite(to_integer(1u32 + old((bytes[0] as u32))), 1 + to_integer(old((bytes[0] as u32))));
      rewrite(truncating_remainder(393126 + (1 + to_integer(old((bytes[0] as u32)))), 65521), truncating_remainder(1 + to_integer(old((bytes[0] as u32))), 65521));
-     rewrite(old(adler_spec_b(bytes, 1, 1, 0)), truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521));
+     rewrite(old(adler_spec_b(bytes.as_ptr(), 1, 1, 0)), truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521));
      rewrite(to_integer(old((bytes[0] as u32))), to_integer(old((bytes[0] as i32))));
      close();
      }
@@ -237,7 +237,7 @@ impl adler2::Adler32 {
      close() using { to_integer(self.a) == to_integer((1u32 + old((bytes[0] as u32))) % 65521u32); };
      close() using { bytes[0] == old(bytes[0]); };
      close() using { to_integer(self.b) == to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32); };
-     close() using { to_integer(self.a) == old(adler_spec_a(bytes, 1, 1)); };
-     close() using { to_integer(self.b) == old(adler_spec_b(bytes, 1, 1, 0)); };
+     close() using { to_integer(self.a) == old(adler_spec_a(bytes.as_ptr(), 1, 1)); };
+     close() using { to_integer(self.b) == old(adler_spec_b(bytes.as_ptr(), 1, 1, 0)); };
     }
 }

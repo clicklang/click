@@ -77,6 +77,10 @@ pub enum Type {
     ByteSlice {
         mutable: bool,
     },
+    /// A `&str` parameter: one string slice, the UTF-8 bytes it refers to
+    /// at the type `str` (`design/rust-slice-values.md`, step 3b). Inside a
+    /// body a `&str` value is read as a shared `ByteSlice`.
+    StrSlice,
     Array {
         element: Box<Type>,
         length: u64,

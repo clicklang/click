@@ -1772,9 +1772,7 @@ impl CellStore {
             .take_while(|(key, _)| {
                 matches!(
                     key.base,
-                    AddressBase::AutomaticLocal { .. }
-                        | AddressBase::ReferenceCarrier { .. }
-                        | AddressBase::SliceLength { .. }
+                    AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. }
                 )
             });
         let mut visited = 0usize;

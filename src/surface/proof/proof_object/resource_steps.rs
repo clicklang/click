@@ -902,7 +902,6 @@ impl<'a> Proof<'a> {
                         // int32 field must not become Integer arithmetic.
                         *value = crate::surface::lowering::pure_function_parameter_argument(
                             &FunctionParameter {
-                                slice_length: None,
                                 name: field.name().to_owned(),
                                 click_type: field.click_type().clone(),
                                 struct_name: None,
@@ -942,7 +941,6 @@ impl<'a> Proof<'a> {
                                     } else {
                                         crate::surface::lowering::pure_function_parameter_argument(
                                             &FunctionParameter {
-                                                slice_length: None,
                                                 name: name.clone(),
                                                 click_type,
                                                 struct_name: None,
@@ -3407,7 +3405,7 @@ fn fold_end_parameter_binding(end: &SyntaxTerm) -> Option<crate::kernel::Binding
     match end {
         SyntaxTerm::Binding(binding) | SyntaxTerm::ProgramBinding(binding) => Some(binding.into()),
         SyntaxTerm::ProgramExpression(ProgramExpression::Variable(binding))
-            if binding.named().is_some() || binding.slice_length_of().is_some() =>
+            if binding.named().is_some() =>
         {
             Some(binding.clone())
         }

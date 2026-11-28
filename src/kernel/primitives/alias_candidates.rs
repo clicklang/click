@@ -288,7 +288,6 @@ impl AliasCandidates {
             | AddressBase::ContractException
             | AddressBase::AggregateReturn { .. }
             | AddressBase::AutomaticLocal { .. }
-            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. } => vec![
                 own(),
                 BlockInterval {

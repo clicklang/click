@@ -1527,7 +1527,6 @@ fn resource_body_fields_as_parameters(
     let substitutions = ContractSubstitutions::with_body_fields_as_program_names(&no_values);
     let mut parameters = definition.parameters.clone();
     parameters.extend(scalar.iter().map(|field| FunctionParameter {
-        slice_length: None,
         name: field.name.clone(),
         click_type: field.click_type.clone(),
         struct_name: None,

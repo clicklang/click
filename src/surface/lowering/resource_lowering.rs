@@ -271,15 +271,40 @@ fn input_arguments(
                     ),
                 ));
             }
-            // A slice parameter is one value named by its binder
-            // (`design/rust-slice-values.md`).
+            // A slice parameter is one wide pointer (`design/rust-slice-values.md`,
+            // step 3b). Its data pointer is the external argument a thin
+            // pointer parameter of its element type would receive; its count
+            // is named by the same input variable, so one name gives both.
             InterfaceType::Slice(element) => {
-                arguments.push(ProgramExpression::Value(
-                    crate::kernel::symbolic_call_result(
-                        crate::kernel::ProgramType::SlicePointer(element),
-                        Variable(arguments.len() as u64),
+                let thin = element.thin_pointer_type();
+                let variable = input_pointer_variable(scope, index)?;
+                let width = thin
+                    .pointee_type()
+                    .expect("a slice's thin part has a pointee")
+                    .byte_width();
+                let ProgramValue::Pointer(data) = ProgramValue::typed_pointer(
+                    Address::new(
+                        AddressBase::ExternalArgument,
+                        scale_int32_offset(OldMachineTerm::Variable(variable), i64::from(width)),
                     ),
-                ));
+                    thin,
+                )
+                .with_contract_pointer_object_class(
+                    parameter.to_kernel_parameter().pointee_class(),
+                    required(index),
+                    index,
+                    scope,
+                ) else {
+                    unreachable!("a typed pointer is a pointer")
+                };
+                let slice =
+                    data.with_element_count(OldMachineTerm::Variable(variable.element_count()));
+                let slice = if element == crate::kernel::SliceElement::Str {
+                    slice.with_type(crate::kernel::ProgramType::SlicePointer(element))
+                } else {
+                    slice
+                };
+                arguments.push(ProgramExpression::Value(ProgramValue::Pointer(slice)));
             }
             InterfaceType::Int128 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int128(
@@ -3705,6 +3730,15 @@ fn object_range_seed(
     }
 }
 
+/// The element of a slice type, the pointee of its data pointer; `None`
+/// for any other type.
+fn slice_element_type(slice_type: ProgramType) -> Option<ProgramType> {
+    match slice_type {
+        ProgramType::SlicePointer(element) => element.thin_pointer_type().pointee_type(),
+        _ => None,
+    }
+}
+
 pub(in crate::surface) fn contract_segment_element_width(
     parameters: &[crate::languages::interface::ImportedParameter],
     segment: &ContractSegment,
@@ -3790,6 +3824,12 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
                 local_element(left, types).or_else(|| local_element(right, types))
             }
             ProgramExpression::Subtract(left, _) => local_element(left, types),
+            ProgramExpression::SliceData(slice) => match slice.as_ref() {
+                ProgramExpression::Variable(name) => {
+                    name.program_type().and_then(slice_element_type)
+                }
+                _ => None,
+            },
             ProgramExpression::PointerOffsetBytes { pointer, .. }
             | ProgramExpression::Subobject { pointer, .. } => local_element(pointer, types),
             _ => None,
@@ -3929,6 +3969,17 @@ fn contract_expression_element_type(
             .find(|parameter| parameter.matches_binding(name))
             .and_then(|parameter| parameter.interface_type().pointee_type())
             .map(InterfaceType::to_kernel_type),
+        ProgramExpression::SliceData(slice) => match slice.as_ref() {
+            ProgramExpression::Variable(name) => slice_element_type(
+                parameters
+                    .iter()
+                    .find(|parameter| parameter.matches_binding(name))?
+                    .interface_type()
+                    .to_kernel_type(),
+            ),
+            ProgramExpression::Value(value) => slice_element_type(value.program_type()),
+            _ => None,
+        },
         ProgramExpression::Add(left, right) => contract_expression_element_type(parameters, left)
             .or_else(|| contract_expression_element_type(parameters, right)),
         ProgramExpression::Subtract(left, _) => contract_expression_element_type(parameters, left),
@@ -3980,6 +4031,21 @@ fn contract_expression_element_width_with_parameter<'a>(
         ProgramExpression::Cast { target_type, .. } => {
             target_type.pointee_type().map(ProgramType::byte_width)
         }
+        // A Rust slice's data pointer points at its element
+        // (`design/rust-slice-values.md`, step 3b).
+        ProgramExpression::SliceData(slice) => match slice.as_ref() {
+            ProgramExpression::Variable(name) => match parameter(name)?.interface_type() {
+                InterfaceType::Slice(element) => element
+                    .thin_pointer_type()
+                    .pointee_type()
+                    .map(ProgramType::byte_width),
+                _ => None,
+            },
+            ProgramExpression::Value(value) => {
+                slice_element_type(value.program_type()).map(ProgramType::byte_width)
+            }
+            _ => None,
+        },
         ProgramExpression::Variable(name) => parameter(name).and_then(|parameter| {
             if parameter.is_struct_value() {
                 Some(4)

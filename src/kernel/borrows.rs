@@ -6556,12 +6556,10 @@ impl BorrowLedger {
         if matches!(footprint, Resource::Emp) || memory_range_is_empty(range) {
             return None;
         }
-        // These internal automatic cells have no source spelling. When the
+        // This internal automatic cell has no source spelling. When the
         // footprint is one memory range, check block distinctness directly.
-        if matches!(
-            range.base().base,
-            AddressBase::SliceLength { .. } | AddressBase::ReferenceCarrier { .. }
-        ) && let Resource::Memory(protected) = &footprint
+        if matches!(range.base().base, AddressBase::ReferenceCarrier { .. })
+            && let Resource::Memory(protected) = &footprint
             && range.base().blocks_proven_distinct(protected.base())
         {
             return None;

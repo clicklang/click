@@ -712,6 +712,9 @@ impl Parser {
             {
                 true
             }
+            // A Rust slice's data pointer, `s.as_ptr()`
+            // (`design/rust-slice-values.md`, step 3b).
+            SyntaxTerm::ProgramExpression(ProgramExpression::SliceData(_)) => true,
             // An address, `&r->arr[0]`, or a cast to a pointer or float type.
             SyntaxTerm::ProgramExpression(
                 ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
@@ -964,6 +967,10 @@ impl Parser {
                             value.program_type(),
                         ))
                     }
+                    // A Rust slice's length is a `usize`.
+                    ProgramExpression::SliceLength(_) => Some(InterfaceType::UInt64(
+                        crate::languages::c::syntax::LongRank::Long,
+                    )),
                     ProgramExpression::TypedLoad { value_type, .. }
                     | ProgramExpression::Cast {
                         target_type: value_type,

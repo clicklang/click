@@ -45,6 +45,34 @@ fn reference_view(
     }
 }
 
+/// The kernel type of a Rust `&[u8]` or `&mut [u8]`.
+pub(super) const BYTE_SLICE: ProgramType =
+    ProgramType::SlicePointer(crate::kernel::SliceElement::UInt8);
+
+/// The slice whose data pointer is `pointer`, viewed at `thin_type`, and
+/// whose element count is `length`: one wide value built from its parts
+/// (`design/rust-slice-values.md`, step 3b).
+fn slice_value(
+    pointer: ProgramExpression,
+    thin_type: ProgramType,
+    length: ProgramExpression,
+    constant: bool,
+) -> ProgramExpression {
+    ProgramExpression::SliceFromRawParts {
+        data: Box::new(reference_view(pointer, thin_type, false, constant)),
+        count: Box::new(length),
+    }
+}
+
+/// The data pointer and element count of the slice `slice` holds:
+/// `slice.as_ptr()` and `slice.len()`, read in place.
+fn slice_components(slice: ProgramExpression) -> (ProgramExpression, ProgramExpression) {
+    (
+        ProgramExpression::SliceData(Box::new(slice.clone())),
+        ProgramExpression::SliceLength(Box::new(slice)),
+    )
+}
+
 pub(crate) type LoweredRust = (Vec<ImportedFunction>, BTreeMap<String, RecordLayout>);
 
 thread_local! {
@@ -618,6 +646,30 @@ fn shared_slice_type(t: &Type) -> Result<Option<ProgramType>, String> {
     )
 }
 
+/// The kernel element of a Rust slice of `element`, a scalar.
+fn slice_element(element: &Type) -> Result<crate::kernel::SliceElement, String> {
+    scalar_type(element)?
+        .pointer_type()
+        .and_then(|thin| crate::kernel::SliceElement::of_thin_pointer_type(thin.to_kernel_type()))
+        .ok_or_else(|| "a slice's element must be a scalar".into())
+}
+
+/// The slice type of a slice-typed Rust local or parameter: `&[T]` and
+/// `&mut [T]` of a scalar `T`, one wide pointer
+/// (`design/rust-slice-values.md`, step 3b).
+fn slice_program_type(t: &Type) -> Result<Option<ProgramType>, String> {
+    Ok(match t {
+        Type::ByteSlice { .. } => Some(ProgramType::SlicePointer(
+            crate::kernel::SliceElement::UInt8,
+        )),
+        Type::StrSlice => Some(ProgramType::SlicePointer(crate::kernel::SliceElement::Str)),
+        Type::ScalarSlice { element, .. } => {
+            Some(ProgramType::SlicePointer(slice_element(element)?))
+        }
+        _ => None,
+    })
+}
+
 fn scalar_type(t: &Type) -> Result<InterfaceType, String> {
     match t {
         Type::Enum { name } => Ok(InterfaceType::Parameter(EnumTypes::get(name)?)),
@@ -1023,56 +1075,33 @@ fn lower_function(
             parameters.push(parameter);
             continue;
         }
-        if let Type::ByteSlice { mutable } = &p.value_type {
-            let length = BindingName::slice_length(spelling()?);
-            slices.insert(p.name.clone(), (length.clone(), !mutable));
-            parameters.push(
-                ImportedParameter::from_binding(InterfaceType::UInt8Pointer, binding.clone(), None)
-                    .with_pointee_constant(!mutable)
-                    .with_slice_length_parameter(1),
+        // A slice parameter is one wide pointer, its data pointer and
+        // element count (`design/rust-slice-values.md`, step 3b).
+        if let Type::ByteSlice { .. } | Type::ScalarSlice { .. } | Type::StrSlice = &p.value_type {
+            let mutable = matches!(
+                p.value_type,
+                Type::ByteSlice { mutable: true } | Type::ScalarSlice { mutable: true, .. }
             );
-            parameters.push(ImportedParameter::from_binding(
-                InterfaceType::UInt64(LongRank::Long),
-                length.clone(),
-                None,
-            ));
-            kernel_parameters.push(
-                program_parameter(binding, ProgramType::UInt8Pointer)
-                    .with_pointee_constant(!mutable)
-                    .with_slice_length_parameter(1),
-            );
-            kernel_parameters.push(program_parameter(length, ProgramType::UInt64));
-            continue;
-        }
-        if let Type::ScalarSlice { element, mutable } = &p.value_type {
-            if !element.is_integer() {
-                return Err("scalar slice parameters require integer elements".into());
+            if let Type::ScalarSlice { element, .. } = &p.value_type {
+                if !element.is_integer() {
+                    return Err("scalar slice parameters require integer elements".into());
+                }
+                shared_scalar_slices.insert(p.name.clone(), scalar_type(element)?.to_kernel_type());
+            } else {
+                // A string slice's body reads it as its bytes.
+                slices.insert(p.name.clone(), !mutable);
             }
-            let length = BindingName::slice_length(spelling()?);
-            let pointer = scalar_type(&Type::Reference {
-                mutable: *mutable,
-                pointee: element.clone(),
-            })?;
-            shared_scalar_slices.insert(
-                p.name.clone(),
-                (length.clone(), scalar_type(element)?.to_kernel_type()),
-            );
+            let Some(ProgramType::SlicePointer(slice)) = slice_program_type(&p.value_type)? else {
+                unreachable!("a slice parameter has a slice type")
+            };
             parameters.push(
-                ImportedParameter::from_binding(pointer, binding.clone(), None)
-                    .with_pointee_constant(!mutable)
-                    .with_slice_length_parameter(1),
+                ImportedParameter::from_binding(InterfaceType::Slice(slice), binding.clone(), None)
+                    .with_pointee_constant(!mutable),
             );
-            parameters.push(ImportedParameter::from_binding(
-                InterfaceType::UInt64(LongRank::Long),
-                length.clone(),
-                None,
-            ));
             kernel_parameters.push(
-                program_parameter(binding, pointer.to_kernel_type())
-                    .with_pointee_constant(!mutable)
-                    .with_slice_length_parameter(1),
+                program_parameter(binding, ProgramType::SlicePointer(slice))
+                    .with_pointee_constant(!mutable),
             );
-            kernel_parameters.push(program_parameter(length, ProgramType::UInt64));
             continue;
         }
         if let Type::Reference { mutable, .. } = &p.value_type {
@@ -1263,11 +1292,6 @@ fn lower_function(
         import_identity: identity.map(std::sync::Arc::from),
         mir_point: None,
         mir_nodes: BTreeMap::new(),
-        slice_local_owner: LocalFunctionId::new(
-            Some(export.logical_source.clone()),
-            f.name.clone(),
-        ),
-        next_slice_local: 0,
         next_result_step: std::cell::Cell::new(next_result_step),
         step_pointee_layouts: std::cell::RefCell::new(BTreeMap::new()),
         loop_iterators: Vec::new(),
@@ -1381,7 +1405,9 @@ struct Context<'a> {
     /// The count of each enumerated slice iterator and the index of each yielded Option.
     enumerate_fields: BTreeMap<MirLocalId, BindingName>,
     shared_array_options: BTreeMap<MirLocalId, shared_arrays::SliceIteratorOptionStorage>,
-    shared_scalar_slices: BTreeMap<MirLocalId, (BindingName, ProgramType)>,
+    /// The scalar slice locals and parameters other than byte slices, with
+    /// their element type.
+    shared_scalar_slices: BTreeMap<MirLocalId, ProgramType>,
     mir_chunk_iterators: BTreeMap<MirLocalId, crate::languages::interface::ChunkIteratorFields>,
     chunk_options: BTreeMap<MirLocalId, chunks::ChunkOptionFields>,
     local_arrays: BTreeSet<MirLocalId>,
@@ -1393,7 +1419,8 @@ struct Context<'a> {
     /// these live in their object's memory, so a write through the borrow
     /// is the value later reads see.
     memory_values: BTreeMap<MirLocalId, ProgramType>,
-    slices: BTreeMap<MirLocalId, (BindingName, bool)>,
+    /// The byte slice locals and parameters, and whether each is shared.
+    slices: BTreeMap<MirLocalId, bool>,
     arrays: BTreeMap<MirLocalId, (u64, ProgramType, bool)>,
     references: BTreeMap<MirLocalId, bool>,
     source: &'a str,
@@ -1403,8 +1430,6 @@ struct Context<'a> {
     import_identity: Option<std::sync::Arc<str>>,
     mir_point: Option<super::borrow_frontiers::MirPoint>,
     mir_nodes: BTreeMap<usize, usize>,
-    slice_local_owner: LocalFunctionId,
-    next_slice_local: u32,
     next_result_step: std::cell::Cell<u32>,
     /// The record each staged reference operand points at, by its step.
     step_pointee_layouts: std::cell::RefCell<BTreeMap<u32, crate::kernel::AggregateLayout>>,
@@ -1523,34 +1548,22 @@ impl Context<'_> {
         }
         statement
     }
-    fn declare_slice_length(&mut self, place: &MirLocalId) -> Result<BindingName, String> {
-        if let Some(declaration) = self.bindings.get(place).and_then(BindingName::local_id) {
-            if let Some(length) = declaration.slice_component_length() {
-                return Ok(length.into());
-            }
-            if let Some(spelling) = declaration.spelling() {
-                let key = MirLocalId::from(spelling);
-                let shadows_parameter =
-                    self.slices.contains_key(&key) || self.shared_scalar_slices.contains_key(&key);
-                return Ok(BindingName::lexical_local_slice_length(
-                    declaration,
-                    shadows_parameter,
-                ));
-            }
-        }
-        let ordinal = self.next_slice_local;
-        self.next_slice_local = ordinal.checked_add(1).ok_or("too many Rust slice locals")?;
-        Ok(BindingName::local_slice_length(LocalBindingId::new(
-            self.slice_local_owner.clone(),
+    /// Declares the slice local `place`, one wide value of type
+    /// `slice_type`.
+    pub(super) fn declare_slice(
+        &self,
+        place: &MirLocalId,
+        slice_type: ProgramType,
+        constant: bool,
+    ) -> Result<ProgramStatement, String> {
+        Ok(program_declare_with_all_qualifiers(
+            self.binding(place)?,
+            slice_type,
             false,
-            ordinal,
-            Some(
-                place
-                    .source_name()
-                    .ok_or("Rust slice storage has no source spelling")?
-                    .to_owned(),
-            ),
-        )))
+            false,
+            false,
+            constant,
+        ))
     }
 
     fn body(&mut self, body: &[S]) -> Result<ProgramStatement, String> {
@@ -1579,33 +1592,13 @@ impl Context<'_> {
                     return self.declare_array(&place.name, element, *length, initializer);
                 }
                 if let Type::ByteSlice { mutable } = &place.value_type {
-                    let (pointer, length_value) = self.slice_parts(initializer)?;
-                    let length = self.declare_slice_length(&place.name)?;
-                    self.slices
-                        .insert(place.name.clone(), (length.clone(), !mutable));
+                    let (pointer, length) = self.slice_parts(initializer)?;
+                    self.slices.insert(place.name.clone(), !mutable);
                     return Ok(program_seq(
-                        program_declare_with_all_qualifiers(
+                        self.declare_slice(&place.name, BYTE_SLICE, !mutable)?,
+                        program_assign(
                             self.binding(&place.name)?,
-                            ProgramType::UInt8Pointer,
-                            false,
-                            false,
-                            false,
-                            !mutable,
-                        ),
-                        program_seq(
-                            program_declare(length.clone(), ProgramType::UInt64),
-                            program_seq(
-                                program_assign(
-                                    self.binding(&place.name)?,
-                                    reference_view(
-                                        pointer,
-                                        ProgramType::UInt8Pointer,
-                                        false,
-                                        !mutable,
-                                    ),
-                                ),
-                                program_assign(length, length_value),
-                            ),
+                            slice_value(pointer, ProgramType::UInt8Pointer, length, !mutable),
                         ),
                     ));
                 }
@@ -1849,43 +1842,20 @@ impl Context<'_> {
             if place.value_type != (Type::ByteSlice { mutable: false }) {
                 return Err("split_at results must be shared byte slices".into());
             }
-            let length_name = if declare {
+            if declare {
                 if !self.locals.insert(place.name.clone()) {
                     return Err("duplicate split_at local identity".into());
                 }
-                let length_name = self.declare_slice_length(&place.name)?;
-                self.slices
-                    .insert(place.name.clone(), (length_name.clone(), true));
-                result = program_seq(
-                    result,
-                    program_seq(
-                        program_declare_with_all_qualifiers(
-                            self.binding(&place.name)?,
-                            ProgramType::UInt8Pointer,
-                            false,
-                            false,
-                            false,
-                            true,
-                        ),
-                        program_declare(length_name.clone(), ProgramType::UInt64),
-                    ),
-                );
-                length_name
-            } else {
-                self.slices
-                    .get(&place.name)
-                    .filter(|(_, constant)| *constant)
-                    .map(|(length, _)| length.clone())
-                    .ok_or("split_at requires declared shared slice results")?
-            };
+                self.slices.insert(place.name.clone(), true);
+                result = program_seq(result, self.declare_slice(&place.name, BYTE_SLICE, true)?);
+            } else if self.slices.get(&place.name) != Some(&true) {
+                return Err("split_at requires declared shared slice results".into());
+            }
             result = program_seq(
                 result,
-                program_seq(
-                    program_assign(
-                        self.binding(&place.name)?,
-                        reference_view(pointer, ProgramType::UInt8Pointer, false, true),
-                    ),
-                    program_assign(length_name, length),
+                program_assign(
+                    self.binding(&place.name)?,
+                    slice_value(pointer, ProgramType::UInt8Pointer, length, true),
                 ),
             );
         }
@@ -1903,31 +1873,31 @@ impl Context<'_> {
                 program_typed_store(address, value, value_type),
             ));
         }
-        if let Some((length, expected)) = self.shared_scalar_slices.get(name).cloned() {
+        if let Some(expected) = self.shared_scalar_slices.get(name).copied() {
             let (pointer, source_length, element) = self.indexed_parts(e)?;
             if element != expected {
                 return Err("shared scalar slice assignment element mismatch".into());
             }
-            return Ok(program_seq(
-                program_assign(self.binding(name)?, pointer),
-                program_assign(length, source_length),
+            return Ok(program_assign(
+                self.binding(name)?,
+                ProgramExpression::SliceFromRawParts {
+                    data: Box::new(pointer),
+                    count: Box::new(source_length),
+                },
             ));
         }
         if self.local_arrays.contains(name) {
             let (length, element, _) = self.arrays[name];
             return self.assign_array(self.array_pointer(name)?, element, length, e);
         }
-        if let Some((length, constant)) = self.slices.get(name).cloned() {
+        if let Some(constant) = self.slices.get(name).copied() {
             let checks = self.chunk_slice_checks(e)?;
-            let (pointer, length_value) = self.slice_parts(e)?;
+            let (pointer, length) = self.slice_parts(e)?;
             return Ok(program_seq(
                 checks,
-                program_seq(
-                    program_assign(
-                        self.binding(name)?,
-                        reference_view(pointer, ProgramType::UInt8Pointer, false, constant),
-                    ),
-                    program_assign(length, length_value),
+                program_assign(
+                    self.binding(name)?,
+                    slice_value(pointer, ProgramType::UInt8Pointer, length, constant),
                 ),
             ));
         }
@@ -2044,7 +2014,11 @@ impl Context<'_> {
                 pieces.push((checks, values, None));
                 continue;
             }
-            if let Type::ByteSlice { mutable } = value_type {
+            // A slice argument is one wide value, built from the data
+            // pointer and count the argument reads, each captured where its
+            // own work ends (`design/rust-slice-values.md`, step 3b).
+            if let Type::ByteSlice { .. } | Type::StrSlice = value_type {
+                let mutable = value_type == (Type::ByteSlice { mutable: true });
                 let (pointer, length) = self.slice_parts(argument)?;
                 let (capture_pointer, pointer) = self.capture_operand(
                     pointer,
@@ -2055,7 +2029,19 @@ impl Context<'_> {
                 )?;
                 let (capture_length, length) = self.capture_operand(length, &Type::Usize)?;
                 checks = program_seq(checks, program_seq(capture_pointer, capture_length));
-                values.extend([pointer, length]);
+                let slice = ProgramExpression::SliceFromRawParts {
+                    data: Box::new(pointer),
+                    count: Box::new(length),
+                };
+                // A string slice is its bytes at the type `str`.
+                values.push(if value_type == Type::StrSlice {
+                    crate::kernel::program_expression::cast(
+                        slice,
+                        ProgramType::SlicePointer(crate::kernel::SliceElement::Str),
+                    )
+                } else {
+                    slice
+                });
                 pieces.push((checks, values, None));
                 continue;
             }
@@ -2073,7 +2059,10 @@ impl Context<'_> {
                 )?;
                 let (capture_length, length) = self.capture_operand(length, &Type::Usize)?;
                 checks = program_seq(checks, program_seq(capture_pointer, capture_length));
-                values.extend([pointer, length]);
+                values.push(ProgramExpression::SliceFromRawParts {
+                    data: Box::new(pointer),
+                    count: Box::new(length),
+                });
                 pieces.push((checks, values, None));
                 continue;
             }
@@ -2402,7 +2391,7 @@ impl Context<'_> {
         match slice {
             E::ArrayToSlice { mutable: false, .. } => true,
             slice => shared_slice_local(slice)
-                .is_some_and(|name| self.slices.get(name).is_some_and(|(_, constant)| *constant)),
+                .is_some_and(|name| self.slices.get(name).is_some_and(|constant| *constant)),
         }
     }
 
@@ -2420,7 +2409,7 @@ impl Context<'_> {
             let E::Local { name } = place.as_ref() else {
                 return Err("slice reborrow requires a slice local".into());
             };
-            if *mutable && self.slices.get(name).is_none_or(|(_, constant)| *constant) {
+            if *mutable && self.slices.get(name).is_none_or(|constant| *constant) {
                 return Err("mutable slice reborrow requires a mutable source".into());
             }
             return self.slice_parts(place);
@@ -2447,13 +2436,11 @@ impl Context<'_> {
         let E::Local { name } = e else {
             return Err("slice values must be local slice references".into());
         };
-        let (length, _) = self
-            .slices
-            .get(name)
-            .ok_or("unknown Rust slice reference")?;
-        Ok((
+        if !self.slices.contains_key(name) {
+            return Err("unknown Rust slice reference".into());
+        }
+        Ok(slice_components(
             crate::kernel::program_expression::variable(self.binding(name)?),
-            crate::kernel::program_expression::variable(length.clone()),
         ))
     }
     fn array_source_is_constant(&self, e: &E) -> Result<bool, String> {
@@ -2500,12 +2487,11 @@ impl Context<'_> {
             }
             E::Deref { reference, .. } => self.indexed_parts(reference),
             E::Local { name } if self.shared_scalar_slices.contains_key(name) => {
-                let (length, element) = self.shared_scalar_slices[name].clone();
-                Ok((
+                let element = self.shared_scalar_slices[name];
+                let (pointer, length) = slice_components(
                     crate::kernel::program_expression::variable(self.binding(name)?),
-                    crate::kernel::program_expression::variable(length),
-                    element,
-                ))
+                );
+                Ok((pointer, length, element))
             }
             E::ArrayToSlice {
                 array,

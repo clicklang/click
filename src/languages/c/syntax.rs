@@ -10566,7 +10566,6 @@ impl Parser {
                     union_name: None,
                     array_element_width: None,
                     pointee_struct_class: None,
-                    slice_length_parameter: None,
                     fixed_reference_bounds: None,
                 });
                 if self.peek() != Some(&Token::Comma) {
@@ -10710,7 +10709,6 @@ impl Parser {
                         union_name: None,
                         array_element_width: None,
                         pointee_struct_class: None,
-                        slice_length_parameter: None,
                         fixed_reference_bounds: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
@@ -10750,7 +10748,6 @@ impl Parser {
                         union_name: None,
                         array_element_width: Some(element_width),
                         pointee_struct_class: None,
-                        slice_length_parameter: None,
                         fixed_reference_bounds: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
@@ -10763,7 +10760,6 @@ impl Parser {
             parameters.push(ImportedParameter {
                 interface_type,
                 name: kernel_name,
-                slice_length_parameter: None,
                 fixed_reference_bounds: None,
                 volatile: object_volatile,
                 pointee_volatile,
@@ -22496,9 +22492,6 @@ impl ImportedParameter {
             .with_constant(self.is_constant())
             .with_pointee_constant(self.pointee_is_constant())
             .with_pointee_class(pointee_class);
-        if let Some(index) = self.slice_length_parameter {
-            parameter = parameter.with_slice_length_parameter(index);
-        }
         if let Some(bytes) = self.fixed_reference_bounds {
             parameter = parameter.with_fixed_reference_bounds(bytes);
         }

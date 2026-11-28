@@ -279,7 +279,6 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
                 }
                 ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                     parameters.push(FunctionParameter {
-                        slice_length: None,
                         name: name.clone(),
                         click_type: ty.clone(),
                         struct_name: None,

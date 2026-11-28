@@ -4528,9 +4528,7 @@ pub(in crate::surface) fn infer_program_expression_type(
             }
             crate::kernel::BindingName::ContractResult => variables.get("result").copied(),
             crate::kernel::BindingName::ContractException => variables.get("exception").copied(),
-            crate::kernel::BindingName::Local(_)
-            | crate::kernel::BindingName::Static(_)
-            | crate::kernel::BindingName::SliceLength(_) => name
+            crate::kernel::BindingName::Local(_) | crate::kernel::BindingName::Static(_) => name
                 .program_type()
                 .and_then(|ty| interface_type_from_program_type(&ty)),
         },

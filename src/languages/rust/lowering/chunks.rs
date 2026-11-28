@@ -226,20 +226,17 @@ impl Context<'_> {
             }
             let mut some = program_skip();
             if let Some(payload) = payload {
-                let Some((length, constant)) = self.slices.get(payload).cloned() else {
+                let Some(constant) = self.slices.get(payload).copied() else {
                     return Err("chunk payload requires a byte-slice local".into());
                 };
-                some = program_seq(
-                    program_assign(
-                        self.binding(payload)?,
-                        reference_view(
-                            variable(&fields.remaining),
-                            ProgramType::UInt8Pointer,
-                            false,
-                            constant,
-                        ),
+                some = program_assign(
+                    self.binding(payload)?,
+                    super::slice_value(
+                        variable(&fields.remaining),
+                        ProgramType::UInt8Pointer,
+                        variable(&fields.size),
+                        constant,
                     ),
-                    program_assign(length, variable(&fields.size)),
                 );
             }
             let some = program_seq(some, fields.advance());

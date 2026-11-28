@@ -2540,6 +2540,20 @@ impl Printer<'_> {
         };
         Some(match index {
             Some(index) => spelled(format!("&{name}[{}]", index.text), UNARY),
+            // A slice's byte offsets are from its data pointer.
+            None if matches!(
+                parameter.interface_type(),
+                crate::languages::interface::InterfaceType::Slice(_)
+            ) =>
+            {
+                spelled(
+                    format!(
+                        "(char *){name}.as_ptr() + {}",
+                        self.offset(extra, depth + 1)
+                    ),
+                    0,
+                )
+            }
             None => spelled(
                 format!("(char *){name} + {}", self.offset(extra, depth + 1)),
                 0,
@@ -2874,6 +2888,12 @@ impl Printer<'_> {
         let string = slice.program_type()
             == crate::kernel::ProgramType::SlicePointer(crate::kernel::SliceElement::Str);
         let count = slice.len()?;
+        // A parameter's own slice is its name.
+        if let Some(naming) = self.labels.naming.clone()
+            && let Some(name) = self.exact_pointer_value(slice, &naming)
+        {
+            return Some((atom(name), string));
+        }
         let thin = slice.as_ptr();
         let address = thin.address();
         if matches!(address.offset.view(), OffsetView::Constant(0)) {
@@ -3049,8 +3069,6 @@ impl Printer<'_> {
         for argument in arguments {
             spelled_arguments.push(self.pure_argument(argument, depth + 1)?.text);
         }
-        let spelled_arguments =
-            crate::surface::diagnostics::slice_call_arguments(name, spelled_arguments);
         if let Some(text) =
             crate::surface::diagnostics::slice_call_spelling(name, &spelled_arguments)
         {

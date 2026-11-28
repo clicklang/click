@@ -44,7 +44,9 @@ prefer test-level work. Do not run the
 nightly suite (`scripts/check.sh --nightly`, `CLICK_NIGHTLY`, or
 `--run-ignored`) before a PR: it takes hours, and the nightly workflow runs it.
 At most run the few nightly tests or fixtures the change plausibly affects,
-by name, and say in the PR what was not run. Follow
+by name, and say in the PR what was not run. Nightly failures do not block a
+PR: list any known new ones in the PR and leave them for the asynchronous nightly
+fixes rather than investigating them before merging. Follow
 [Testing Click](docs/internals/testing.md) for test selection, limits, and
 expansion checks.
 

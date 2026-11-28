@@ -2086,6 +2086,12 @@ fn abstract_execution_state_for_join_across_with_policy(
                 | ProgramType::Float64Array(_) => {
                     unreachable!("array objects use LocalBinding::ArrayObject")
                 }
+                // A slice the arms disagree on is a fresh slice binder, its
+                // data pointer and count named by one variable.
+                ProgramType::SlicePointer(_) => crate::kernel::symbolic_call_result(
+                    *program_type,
+                    join_variable(&mut variables, &mut budget)?,
+                ),
                 _ => ProgramValue::typed_pointer(
                     Address::symbolic(join_variable(&mut variables, &mut budget)?),
                     *program_type,

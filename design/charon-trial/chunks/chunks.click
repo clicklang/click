@@ -22,7 +22,7 @@ fn walk(bytes: &[u8]) -> usize {
         invariant tail.len() == bytes.len() % 4u64;
         invariant iter.chunk_size == 4u64;
         invariant iter.v.len() <= bytes.len() - bytes.len() % 4u64;
-        invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
+        invariant iter.v == bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
         initialize by {
             have bytes.len() % 4u64 <= bytes.len();
             close();
@@ -34,7 +34,7 @@ fn walk(bytes: &[u8]) -> usize {
                 have to_integer((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64) <= to_integer(bytes.len());
                 have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) < to_integer(bytes.len());
                 have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4 <= 18446744073709551615;
-                have (bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len())) + 4u64 == bytes + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);
+                have (bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64 - iter.v.len())) + 4u64 == bytes.as_ptr() + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);
                 mark head;
                 step_until(loop(0).back_edge);
                 have iter.v.len() == at(head, iter.v.len()) - 4u64;
@@ -48,7 +48,7 @@ fn walk(bytes: &[u8]) -> usize {
                     to_integer(iter.v.len()) < to_integer(at(head, iter.v.len()));
                 };
                 have (bytes.len() - bytes.len() % 4u64 - at(head, iter.v.len())) + 4u64 == bytes.len() - bytes.len() % 4u64 - iter.v.len();
-                have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
+                have iter.v == bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
             } else {
                 step(); step(); step();
             }
@@ -78,7 +78,7 @@ fn tail_byte(bytes: &[u8]) -> u8 {
     have bytes.len() - bytes.len() % 4u64 == 4u64;
     step_until(assignment(tail, 0).entry); step(); step();
     have tail.len() == 3u64;
-    have tail == bytes + 4u64;
+    have tail.as_ptr() == bytes.as_ptr() + 4u64;
     step_until(function.exit);
     close();
 }
