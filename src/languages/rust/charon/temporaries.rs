@@ -324,6 +324,38 @@ pub(super) fn substitute_pure_values(
             && assignments.get(name) == Some(&1)
     };
     let substitutable = |name: &MirLocalId| single_read(name) && !switch_locals.contains(name);
+    // A temporary whose one mention, apart from its definition and its
+    // storage, is the place of a borrow: a slice reborrowed again.
+    let mut mentions = BTreeMap::<MirLocalId, usize>::new();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. }) {
+                continue;
+            }
+            for name in mentioned_locals(statement) {
+                *mentions.entry(name).or_default() += 1;
+            }
+        }
+        let mut terminator_reads = BTreeMap::new();
+        let mut terminator_named = BTreeSet::new();
+        terminator_uses(
+            &block.terminator,
+            &mut terminator_reads,
+            &mut terminator_named,
+        );
+        for name in terminator_named
+            .into_iter()
+            .chain(terminator_reads.into_keys())
+        {
+            *mentions.entry(name).or_default() += 1;
+        }
+    }
+    let reborrowed_once = |name: &MirLocalId| {
+        temporaries.contains(name)
+            && !reads.contains_key(name)
+            && assignments.get(name) == Some(&1)
+            && mentions.get(name) == Some(&2)
+    };
     let mut removed = BTreeSet::new();
     for block in blocks.iter_mut() {
         // The pure values defined so far in this block whose read is still
@@ -468,7 +500,12 @@ pub(super) fn substitute_pure_values(
         }
         // Finish collapsing reborrow chains before moving their final
         // borrow into a slice operation.
-        fold_adjacent_slice_borrows(&mut block.statements, &substitutable, &mut removed);
+        fold_adjacent_slice_borrows(
+            &mut block.statements,
+            &substitutable,
+            &reborrowed_once,
+            &mut removed,
+        );
         fold_slice_coercion_operands(block, &substitutable, &mut removed);
         fold_closure_argument(block, &substitutable, &mut removed);
         if !constant_initializers.is_empty() {
@@ -668,6 +705,7 @@ fn fold_constructor_reborrow(
 fn fold_adjacent_slice_borrows(
     statements: &mut Vec<S>,
     substitutable: &impl Fn(&MirLocalId) -> bool,
+    reborrowed_once: &impl Fn(&MirLocalId) -> bool,
     removed: &mut BTreeSet<MirLocalId>,
 ) {
     let mut statements_iter = std::mem::take(statements).into_iter().peekable();
@@ -677,12 +715,42 @@ fn fold_adjacent_slice_borrows(
             target: E::Local { name },
             value: borrow @ E::Borrow { place, value_type },
         } = &statement
-            && substitutable(name)
+            && (substitutable(name) || reborrowed_once(name))
             && pure(place)
             && !checked(place)
         {
             while matches!(statements_iter.peek(), Some(S::Site { .. })) {
                 source_markers.push(statements_iter.next().expect("source marker"));
+            }
+            // A slice reborrowed again, as `&mut *bytes` returned
+            // (`_2 = &mut *_1; _0 = &mut *_2`), reborrows the first place.
+            let slice = |t: &Type| {
+                matches!(
+                    t,
+                    Type::ByteSlice { .. } | Type::ScalarSlice { .. } | Type::StrSlice
+                )
+            };
+            if slice(value_type)
+                && source_markers.is_empty()
+                && let Some(S::Assign {
+                    target: E::Local { .. },
+                    value:
+                        E::Borrow {
+                            place: outer,
+                            value_type: outer_type,
+                        },
+                }) = statements_iter.peek_mut()
+                && slice(outer_type)
+                && matches!(outer.as_ref(), E::Local { name: read } if read == name)
+            {
+                *outer = place.clone();
+                removed.insert(name.clone());
+                continue;
+            }
+            if !substitutable(name) {
+                statements.push(statement);
+                statements.extend(source_markers);
+                continue;
             }
             let operand = match (value_type, statements_iter.peek_mut()) {
                 (
@@ -3481,6 +3549,55 @@ pub(super) fn call_steps(
             removed.insert(destination);
             continue;
         }
+        // A slice result its continuation only reborrows, as `f(x)` in tail
+        // position does (`_0 = &*_2`), is the call's one wide value
+        // (`design/rust-slice-values.md`, step 3c): the reborrow reads it.
+        if matches!(
+            ty,
+            Type::ByteSlice { .. } | Type::ScalarSlice { .. } | Type::StrSlice
+        ) && !through_pointer
+            && temporaries.contains(&destination)
+            && assigned.get(&destination) == Some(&1)
+            && mentions.get(&destination) == Some(&1)
+            && !reads.contains_key(&destination)
+            && target != index
+            && predecessors.get(target) == Some(&1)
+            && let Some(place) =
+                blocks[target]
+                    .statements
+                    .iter_mut()
+                    .find_map(|statement| match statement {
+                        S::Assign {
+                            target: E::Local { .. },
+                            value: E::Borrow { place, value_type },
+                        } if matches!(
+                            value_type,
+                            Type::ByteSlice { .. } | Type::ScalarSlice { .. } | Type::StrSlice
+                        ) && matches!(place.as_ref(), E::Local { name } if *name == destination) =>
+                        {
+                            Some(place)
+                        }
+                        _ => None,
+                    })
+        {
+            **place = E::CallResult {
+                call: next_step,
+                function,
+                keeps: false,
+            };
+            if let T::Call {
+                destination: slot,
+                result,
+                ..
+            } = &mut blocks[index].terminator
+            {
+                *slot = None;
+                *result = Some(next_step);
+            }
+            next_step += 1;
+            removed.insert(destination);
+            continue;
+        }
         if !temporaries.contains(&destination) || named.contains(&destination) {
             continue;
         }
@@ -3503,7 +3620,16 @@ pub(super) fn call_steps(
         let Some(&(1, reader)) = reads.get(&destination) else {
             continue;
         };
-        let boxed = matches!(ty, Type::Box { .. } | Type::OptionBox { .. });
+        // A slice result is one wide value (`design/rust-slice-values.md`,
+        // step 3c), retained to the immediate continuation as a box is.
+        let boxed = matches!(
+            ty,
+            Type::Box { .. }
+                | Type::OptionBox { .. }
+                | Type::ByteSlice { .. }
+                | Type::ScalarSlice { .. }
+                | Type::StrSlice
+        );
         if !(ty.is_scalar() || matches!(ty, Type::Enum { .. }) || boxed)
             || (through_pointer && (!ty.is_scalar() || reader != target))
             || target == index
@@ -3513,7 +3639,8 @@ pub(super) fn call_steps(
         }
         // In `[f(), g()]` the first result is read after the second call.
         // Each edge in this continuation must be forward and single-entry.
-        // Box and optional-box results are retained only to the immediate continuation.
+        // Box, optional-box and slice results are retained only to the
+        // immediate continuation.
         if reader != target
             && (boxed
                 || !(index < target

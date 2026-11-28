@@ -78,8 +78,8 @@ fn retyped(named: SyntaxTerm, named_string: bool, string: bool) -> SyntaxTerm {
 }
 
 /// Whether the slice the variable `variable` names is a string slice: the
-/// type its proof binder or its parameter declares. A slice a call
-/// returned is never one, since no front end returns a `&str`.
+/// type its proof binder or its parameter declares. A slice a Rust call
+/// returns is not read here (`design/rust-slice-values.md`, step 3c-i).
 fn slice_variable_is_string(variable: Variable, parameter_binding: ParameterBinding<'_>) -> bool {
     let element = folds::slice_binder_element(variable).or_else(|| {
         match slice_parameter_of(variable, parameter_binding)?.interface_type() {

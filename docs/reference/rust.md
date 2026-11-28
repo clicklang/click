@@ -335,7 +335,14 @@ value: its data pointer and its length. `bytes.len()` is its length,
 elements and ranges are indexed through its data pointer, `bytes[i]` and
 `bytes[a..b]`. Pointer arithmetic and pointer comparisons are written on the
 data pointer, `bytes.as_ptr() + k`; on the bare name, which is the slice,
-they are refused. An index or a range bound keeps
+they are refused. A slice result, `-> &[T]`, `-> &mut [T]` or `-> &str`, is
+one value too: the contract reads `result.len()`, `result.as_ptr()` and
+`result[i]`, and a caller binds the result as one slice local
+([`tests/fixtures/rust-verification/slice-returns`](https://github.com/clicklang/click/blob/master/tests/fixtures/rust-verification/slice-returns/returns.click)).
+A caller's proof that reads elements through a returned slice is not yet
+supported, and failures may print a returned slice's data pointer as the
+slice ([step 3c-i](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan)).
+An index or a range bound keeps
 its `usize` type, so nothing is cast and the contract states no bound on the
 length:
 
@@ -1182,7 +1189,8 @@ legality; Click checks memory authority and the indexed values.
 The [byte-slice example](https://github.com/clicklang/click/blob/master/examples/rust-slices/bytes.click)
 uses variable-length contracts with existing memory ranges, as `read` and
 `write` in "Signatures in Rust syntax" do. A range bounded by a `usize` has 64-bit bounds, so the contract states no
-limit on the length. `.len()` alone needs no byte resource. General slice returns, range subscripts, indexed compound assignment, and
+limit on the length. `.len()` alone needs no byte resource. A function returns a slice as one
+value, its data pointer and length. Range subscripts, indexed compound assignment, and
 other slice element types remain unsupported. Supported shared slice splitting
 is described below. Numeric contract casts are `x as i32`, `x as u32`,
 `x as i64`, `x as u64` and the other scalar types, and like Rust `as` they
@@ -1239,10 +1247,11 @@ makes a string slice of a byte slice `v`. A string slice is no byte slice:
 `s[i]`, `s[a..b]`, a `&[T]` parameter and `s == bytes` refuse it, naming its
 type. Failures print a string slice in these spellings.
 
-In imported Rust code, `&mut str`, `String`, string literals, `as_bytes`,
-`==` and the other `str` methods are refused with their names: a call that
-returns a slice needs the slice locals of
-[step 3](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan).
+A function may return a `&str`, as one string slice, and its contract reads
+`result.len()` and `result.as_ptr()`. In imported Rust code, `&mut str`,
+`String`, string literals, `as_bytes`, `==` and the other `str` methods are
+refused with their names (`as_bytes` is
+[step 3c](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan)).
 The UTF-8 validity of a `&str`'s bytes is not modeled.
 
 ## Shared slice splitting
@@ -1354,7 +1363,7 @@ Single-file units exclude modules and imports; crate units support
 the locked module closure described above. Macros, semantic attributes,
 dependencies, unsafe code, heap allocation beyond
 [boxes](#boxes), nested aggregate parameters,
-reference returns, and other integer widths are outside this slice. Trait
+reference returns other than slices, and other integer widths are outside this slice. Trait
 dispatch and type parameters are limited to the forms described under
 [callable bounds](#function-pointers-and-named-contracts) and
 [trait method interfaces](#trait-method-interfaces); const generics
