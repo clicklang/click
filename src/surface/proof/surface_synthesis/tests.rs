@@ -8485,8 +8485,9 @@ fn closed_machine_equality_lowering_retains_its_comparison() {
                 "{source}"
             );
             assert_eq!(
-                crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                    == Some(held),
+                crate::kernel::machine_integer::comparison::closed_condition_value(
+                    crate::kernel::BooleanOperandView::Native(condition)
+                ) == Some(held),
                 truth,
                 "{source}: {condition:?}"
             );
@@ -8565,8 +8566,9 @@ fn closed_bool_literal_comparison_lowering_retains_its_comparison() {
         };
         assert_eq!(*actual_held, held, "{source}");
         assert_eq!(
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                == Some(held),
+            crate::kernel::machine_integer::comparison::closed_condition_value(
+                crate::kernel::BooleanOperandView::Native(condition)
+            ) == Some(held),
             truth,
             "{source}"
         );

@@ -712,8 +712,12 @@ impl<'a> MachineOperandView<'a> {
                     destination,
                     operand,
                 } => {
-                    let KernelTermNode::IntegerLiteral(literal) = operand.node() else {
-                        return None;
+                    let literal = match operand.node() {
+                        KernelTermNode::IntegerLiteral(literal) => literal,
+                        _ => match operand.written_argument()? {
+                            PureFunctionArgument::Integer(value) => value.as_const()?,
+                            _ => return None,
+                        },
                     };
                     (*destination, literal)
                 }

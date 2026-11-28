@@ -174,6 +174,15 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             KernelTermNode::IntegerCompare { .. } => {
                 return normalize_integer_comparison(BooleanOperandView::Shared(root));
             }
+            KernelTermNode::BoolCompare { .. } | KernelTermNode::BoolEqual { .. } => {
+                if let Some(value) =
+                    crate::kernel::machine_integer::comparison::closed_condition_value(
+                        BooleanOperandView::Shared(root),
+                    )
+                {
+                    return Some(value);
+                }
+            }
             // Surface leaves these predicates undecided, even for reflexive addresses.
             KernelTermNode::Variable(_)
             | KernelTermNode::AddressEqual { .. }
@@ -226,7 +235,7 @@ fn normalize_native_condition(condition: &OldConditionTerm) -> Option<bool> {
         // literals, which lowering retains.
         condition @ (OldConditionTerm::Compare { .. } | OldConditionTerm::BoolEqual(..))
             if let Some(value) =
-                crate::kernel::machine_integer::comparison::closed_condition_value(condition) =>
+                crate::kernel::machine_integer::comparison::closed_condition_value(crate::kernel::BooleanOperandView::Native(condition)) =>
         {
             Some(value)
         }

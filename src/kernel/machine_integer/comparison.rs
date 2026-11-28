@@ -8,8 +8,9 @@ pub(crate) use fact_identity::{FactOperand, fact_operand_identity};
 
 use super::{Relation, identity, range, representation};
 use crate::kernel::{
-    IntegerComparisonOperator, IntegerTerm, KernelTerm, KernelTermNode, MachineIntegerType,
-    OldConditionTerm, OldMachineTerm, Proposition, SharedIntegerTerm, SharedMachineIntegerTerm,
+    BooleanOperandView, IntegerComparisonOperator, IntegerTerm, KernelTerm, KernelTermNode,
+    MachineIntegerType, OldConditionTerm, OldMachineTerm, Proposition, SharedIntegerTerm,
+    SharedMachineIntegerTerm,
 };
 
 /// A written comparison for structural matching. Unlike checking views, this
@@ -197,72 +198,77 @@ pub(crate) fn native_comparison_of_integer_observation(
     native_comparison_view(condition, value)?.boxed_condition()
 }
 
-/// Check two literal native operands without rewriting the stored comparison
-/// or reading ambient facts. Symbolic operands are refused at their roots.
-pub(crate) fn literal_native_comparison_value(condition: &OldConditionTerm) -> Option<bool> {
-    let OldConditionTerm::Compare {
-        format,
-        relation,
-        left,
-        right,
-    } = condition
-    else {
-        return None;
-    };
-    let conversion_literal = |word: &OldMachineTerm| {
-        let (destination, value) =
-            crate::kernel::MachineOperandView::Old(word).checked_literal_integer_conversion()?;
-        destination.constant_term(value)
-    };
-    let left_literal = conversion_literal(left);
-    let right_literal = conversion_literal(right);
-    let left = left_literal.as_ref().unwrap_or(left);
-    let right = right_literal.as_ref().unwrap_or(right);
-    // Wide equality reads no sign and is filed at `int64` whatever its
-    // literals' signedness (`OldConditionTerm::int64_equal`): compare the bits.
-    if *format == MachineIntegerType::Int64
-        && *relation == crate::kernel::CompareRelation::Equal
-        && let (Some(left), Some(right)) =
-            (left.bitvector64_as_const(), right.bitvector64_as_const())
-    {
-        return Some(left == right);
-    }
-    if !matches!(
-        format,
-        MachineIntegerType::Int8
-            | MachineIntegerType::UInt8
-            | MachineIntegerType::Int16
-            | MachineIntegerType::UInt16
-            | MachineIntegerType::Int32
-            | MachineIntegerType::UInt32
-            | MachineIntegerType::Int64
-            | MachineIntegerType::UInt64
-    ) || format.constant_from_term(left).is_none()
-        || format.constant_from_term(right).is_none()
-    {
+/// Decide a written machine comparison without assumptions. Wide equality
+/// also admits expressions recognized by the native 64-bit constant reader.
+pub(crate) fn literal_native_comparison_value(condition: BooleanOperandView<'_>) -> Option<bool> {
+    use crate::kernel::{KernelMachineLiteral, MachineOperandView};
+    let (format, relation, operands) = condition.comparison()?;
+    let [left, right] = operands.map(|operand| match operand {
+        MachineOperandView::Shared(root) if let Some(value) = root.written_machine_input() => {
+            MachineOperandView::Old(value)
+        }
+        _ => operand,
+    });
+    if format.format().bits() > 64 {
         return None;
     }
-    match OldConditionTerm::machine_compare(*format, *relation, left.clone(), right.clone()) {
-        OldConditionTerm::Constant(value) => Some(value),
-        _ => None,
+    let literal_at = |operand: MachineOperandView<'_>, ty: MachineIntegerType| {
+        if let Some((destination, value)) = operand.checked_literal_integer_conversion() {
+            return KernelMachineLiteral::from_term_bits(destination, value.bits()).constant_at(ty);
+        }
+        match operand {
+            MachineOperandView::Shared(root) => root.machine_literal()?.constant_at(ty),
+            MachineOperandView::Old(term) => ty.constant_from_term(term),
+        }
+    };
+    if format == MachineIntegerType::Int64 && relation == crate::kernel::CompareRelation::Equal {
+        // Wide equality also reads constant arithmetic and integer addresses
+        // of null. Keep that evaluator for compound operands.
+        let bits = |operand: MachineOperandView<'_>| {
+            if let MachineOperandView::Old(term) = operand
+                && operand.integer_conversion_destination().is_none()
+            {
+                return term.bitvector64_as_const();
+            }
+            literal_at(operand, MachineIntegerType::UInt64)
+                .or_else(|| literal_at(operand, MachineIntegerType::Int64))
+                .map(|value| value.bits() as u64)
+        };
+        if let (Some(a), Some(b)) = (bits(left), bits(right)) {
+            return Some(a == b);
+        }
+        let BooleanOperandView::Shared(root) = condition else {
+            return None;
+        };
+        if left.variable().is_some() || right.variable().is_some() {
+            return None;
+        }
+        let stored = crate::kernel::StoredConditionTerm::from_root(root.clone())?;
+        return literal_native_comparison_value(BooleanOperandView::Native(stored.old_form()));
     }
+    let left = literal_at(left, format)?;
+    let right = literal_at(right, format)?;
+    Some(relation.holds(left.to_i128()?, right.to_i128()?))
 }
 
-/// The value of a closed condition from its literal roots alone: a constant,
-/// a native machine or float comparison, or a `bool` equality of two
-/// constants. Checking and exact matching decide the retained comparisons here.
-pub(crate) fn closed_condition_value(condition: &OldConditionTerm) -> Option<bool> {
-    match condition {
-        OldConditionTerm::Constant(value) => Some(*value),
-        OldConditionTerm::BoolEqual(left, right) => match (left.as_ref(), right.as_ref()) {
-            (OldConditionTerm::Constant(left), OldConditionTerm::Constant(right)) => {
-                Some(left == right)
-            }
-            _ => None,
-        },
-        condition => literal_native_comparison_value(condition)
-            .or_else(|| condition.literal_float_comparison_value()),
+/// The value of a closed machine comparison, floating-point literal comparison,
+/// Boolean literal or equality of Boolean literals.
+pub(crate) fn closed_condition_value(condition: BooleanOperandView<'_>) -> Option<bool> {
+    if let BooleanOperandView::Shared(root) = condition
+        && let Some(native) = root.cached_condition_output()
+    {
+        return closed_condition_value(BooleanOperandView::Native(native));
     }
+    if let Some(value) = condition.constant() {
+        return Some(value);
+    }
+    if let Some([left, right]) = condition.equality() {
+        return Some(left.constant()? == right.constant()?);
+    }
+    if let Some((format, operator, [left, right])) = condition.float_comparison() {
+        return Some(format.compare_bits(left.literal_bits()?, right.literal_bits()?, operator));
+    }
+    literal_native_comparison_value(condition)
 }
 
 /// Whether a written machine comparison retains a simple int32 match operand.
@@ -1728,7 +1734,16 @@ mod borrowed_comparison_tests {
                     left: Box::new(left.clone()),
                     right: Box::new(right.clone()),
                 };
-                assert_eq!(literal_native_comparison_value(&condition), Some(expected));
+                assert_eq!(
+                    literal_native_comparison_value(BooleanOperandView::Native(&condition)),
+                    Some(expected)
+                );
+                let shared = crate::kernel::KernelTermImport::default().condition(&condition);
+                assert_eq!(
+                    closed_condition_value(BooleanOperandView::Shared(&shared)),
+                    Some(expected)
+                );
+                assert!(!shared.has_cached_native_argument());
                 for truth in [true, false] {
                     let proposition = Proposition::condition_is(condition.clone(), truth);
                     assert_eq!(
@@ -1746,9 +1761,37 @@ mod borrowed_comparison_tests {
                     left: Box::new(OldMachineTerm::Variable(Variable(992597))),
                     right: Box::new(right.clone()),
                 };
-                assert_eq!(literal_native_comparison_value(&symbolic), None);
+                assert_eq!(
+                    literal_native_comparison_value(BooleanOperandView::Native(&symbolic)),
+                    None
+                );
             }
         }
+    }
+
+    #[test]
+    fn shared_wide_equality_keeps_constant_arithmetic_over_null_addresses() {
+        use crate::kernel::{Address, AddressObjectClass, KernelTermImport, MachineBinaryOp};
+        let sum = OldMachineTerm::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Add,
+            left: Box::new(OldMachineTerm::IntegerAddress(
+                Box::new(Address::null()),
+                AddressObjectClass::NONE,
+            )),
+            right: Box::new(OldMachineTerm::uint64_constant(u64::MAX)),
+        };
+        let condition = OldConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: R::Equal,
+            left: Box::new(sum),
+            right: Box::new(OldMachineTerm::int64_constant(-1)),
+        };
+        let root = KernelTermImport::default().condition(&condition);
+        assert_eq!(
+            closed_condition_value(BooleanOperandView::Shared(&root)),
+            Some(true)
+        );
     }
 
     #[test]

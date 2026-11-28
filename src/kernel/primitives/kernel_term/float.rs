@@ -82,6 +82,9 @@ impl<'a> FloatOperandView<'a> {
             Self::Native(_, OldMachineTerm::Constant { format, bits }) => Some((*format, *bits)),
             Self::Shared(root) => match root.node() {
                 KernelTermNode::FloatLiteral { carrier, bits } => Some((*carrier, *bits)),
+                KernelTermNode::ImportedScalar(input) => {
+                    Self::Native(self.format(), input.value()).literal()
+                }
                 KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
                     Self::from_value(match root.written_argument()? {
                         PureFunctionArgument::Value(value) => value,

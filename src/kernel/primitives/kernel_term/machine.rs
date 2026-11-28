@@ -28,7 +28,7 @@ impl KernelTerm {
     }
 
     /// Read only literal roots, including a selected native compatibility input.
-    pub(super) fn machine_literal(&self) -> Option<KernelMachineLiteral> {
+    pub(in crate::kernel) fn machine_literal(&self) -> Option<KernelMachineLiteral> {
         match self.node() {
             KernelTermNode::MachineLiteral(value) => Some(value.clone()),
             _ => {
@@ -44,6 +44,18 @@ impl KernelTerm {
     /// Borrow a selected operand already owned by its machine input.
     pub(crate) fn retained_machine_input(&self) -> Option<&OldMachineTerm> {
         retained_machine_input(self.node())
+    }
+
+    /// Borrow a machine operand inside a generic scalar or argument descriptor.
+    pub(in crate::kernel) fn written_machine_input(&self) -> Option<&OldMachineTerm> {
+        if let KernelTermNode::ImportedScalar(input) = self.node() {
+            MachineIntegerType::from_program_type(input.carrier())?;
+            return Some(input.value());
+        }
+        let PureFunctionArgument::Value(integer_c_value!(value)) = self.written_argument()? else {
+            return None;
+        };
+        Some(value)
     }
 
     pub(crate) fn machine_if_shared(format: MachineIntegerType, arguments: [Self; 3]) -> Self {
@@ -377,7 +389,7 @@ impl KernelMachineLiteral {
             .or_else(|| u32::try_from(self.signed64()?).ok())
     }
 
-    fn from_term_bits(format: MachineIntegerType, bits: u128) -> Self {
+    pub(in crate::kernel) fn from_term_bits(format: MachineIntegerType, bits: u128) -> Self {
         match format {
             MachineIntegerType::Int32 => Self::Word32(bits as u32),
             MachineIntegerType::UInt32 => Self::UInt32(bits as u32),
@@ -1021,20 +1033,10 @@ impl KernelTermExport {
             } => Old::cast_node(*encoding, *source, *destination, Self::machine(operand)?),
             Node::MachineObservationInput { observation, .. } => observation.value().clone(),
             Node::WrittenMachine(value) => value.value().clone(),
-            Node::ImportedScalar(input)
-                if MachineIntegerType::from_program_type(input.carrier()).is_some() =>
-            {
-                input.value().clone()
-            }
-            Node::ObservedArgument(_) | Node::CallArgument(_) => {
-                let Some(PureFunctionArgument::Value(value)) = term.written_argument() else {
-                    return Err("expected a machine value legacy payload");
-                };
-                let (integer_c_value!(bits)) = value else {
-                    return Err("expected a machine integer legacy payload");
-                };
-                bits.clone()
-            }
+            Node::ImportedScalar(_) | Node::ObservedArgument(_) | Node::CallArgument(_) => term
+                .written_machine_input()
+                .ok_or("expected a machine integer payload")?
+                .clone(),
             _ => return Err("expected a machine kernel term"),
         })
     }

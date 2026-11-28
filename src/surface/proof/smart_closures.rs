@@ -4277,12 +4277,12 @@ pub(super) fn propositions_match_after_canonical_loads(
             // A constant condition and a closed literal comparison, which
             // lowering retains as written, match by the truth they state.
             (Proposition::ConditionIs(left, expected), Proposition::ConditionIs(right, other))
-                if closed_condition_value(left.old_form()).is_some()
-                    && closed_condition_value(right.old_form()).is_some() =>
+                if let (Some(left_value), Some(right_value)) = (
+                    closed_condition_value(left.operand_view()),
+                    closed_condition_value(right.operand_view()),
+                ) =>
             {
-                if (closed_condition_value(left.old_form()) == Some(*expected))
-                    != (closed_condition_value(right.old_form()) == Some(*other))
-                {
+                if (left_value == *expected) != (right_value == *other) {
                     return false;
                 }
             }

@@ -2163,6 +2163,41 @@ mod tests {
     }
 
     #[test]
+    fn closed_comparisons_read_literals_inside_producer_arguments() {
+        let word = OldMachineTerm::constant(u32::MAX);
+        let application = SharedPureApplication::intern(
+            "closed_arguments".into(),
+            vec![
+                PureFunctionArgument::Value(ProgramValue::Int32(word.clone())),
+                PureFunctionArgument::Integer(IntegerTerm::constant(0.into()).into()),
+            ],
+        );
+        let format = MachineIntegerType::Int32;
+        let zero = KernelTerm::integer_to_machine(
+            format,
+            KernelTerm::written_call_argument(&application, 1),
+        )
+        .unwrap();
+        for left in [
+            KernelTerm::imported_scalar(ProgramType::Int32, &word),
+            KernelTerm::written_call_argument(&application, 0),
+        ] {
+            let comparison = KernelTerm::boolean_comparison_raw(
+                format,
+                CompareRelation::LessThan,
+                [left, zero.clone()],
+            );
+            assert_eq!(
+                crate::kernel::machine_integer::comparison::closed_condition_value(
+                    BooleanOperandView::Shared(&comparison)
+                ),
+                Some(true)
+            );
+            assert!(!comparison.has_cached_native_argument());
+        }
+    }
+
+    #[test]
     fn machine_observation_retains_its_format_and_reconstructs_after_source_drop() {
         let word = OldMachineTerm::Variable(Variable(87654322));
         let mut observations = Vec::new();

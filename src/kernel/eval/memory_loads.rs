@@ -3284,11 +3284,12 @@ thread_local! {
 /// fact. Only the two literal roots are inspected.
 pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> {
     if let Proposition::ConditionIs(condition, value) = proposition
-        && let Some(decided) =
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form())
+        && let Some(decided) = crate::kernel::machine_integer::comparison::closed_condition_value(
+            condition.operand_view(),
+        )
     {
         return Some(Proposition::condition_is(
-            OldConditionTerm::Constant(decided),
+            crate::kernel::StoredConditionTerm::constant(decided),
             *value,
         ));
     }
@@ -3337,12 +3338,17 @@ fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
     };
     match proposition {
         Proposition::ConditionIs(condition, value)
-            if !matches!(condition.old_form(), OldConditionTerm::Constant(_)) =>
+            if condition.operand_view().constant().is_none() =>
         {
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form())
-                .map(|decided| {
-                    Proposition::condition_is(OldConditionTerm::Constant(decided), *value)
-                })
+            crate::kernel::machine_integer::comparison::closed_condition_value(
+                condition.operand_view(),
+            )
+            .map(|decided| {
+                Proposition::condition_is(
+                    crate::kernel::StoredConditionTerm::constant(decided),
+                    *value,
+                )
+            })
         }
         Proposition::And(left, right) => pair(left, right).map(|(l, r)| Proposition::And(l, r)),
         Proposition::Or(left, right) => pair(left, right).map(|(l, r)| Proposition::Or(l, r)),
