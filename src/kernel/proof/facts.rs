@@ -11,11 +11,11 @@ use super::{
     MemoryErasedPropositionKey, PersistentSequence, QuantifiedEquivalenceKey,
     memory_erased_proposition_key, quantified_equivalence_index_key,
 };
+use crate::kernel::CompareRelation;
 use crate::kernel::assumptions::observation_comparisons::PropositionKey;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
-use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::persistent::{PersistentMap, PersistentSet};
@@ -2708,50 +2708,12 @@ pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
     }
     match proposition {
         Proposition::And(left, right) => is_definedness_guard(left) && is_definedness_guard(right),
-        Proposition::ConditionIs(condition, false) => matches!(
-            condition.old_form(),
-            OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Add,
-                ..
-            } | OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Subtract,
-                ..
-            } | OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Multiply,
-                ..
-            } | OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Divide,
-                ..
-            } | OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::ShiftLeft,
-                ..
-            } | OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int64,
-                op: OverflowOperation::Add,
-                ..
-            } | OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int64,
-                op: OverflowOperation::Subtract,
-                ..
-            } | OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int64,
-                op: OverflowOperation::Multiply,
-                ..
-            } | OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int64,
-                op: OverflowOperation::Divide,
-                ..
-            } | OldConditionTerm::Overflows {
-                format: MachineIntegerType::Int64,
-                op: OverflowOperation::ShiftLeft,
-                ..
-            }
-        ),
+        Proposition::ConditionIs(condition, false) => condition
+            .operand_view()
+            .overflow()
+            .is_some_and(|(format, _, _)| {
+                crate::kernel::machine_integer::representation::files_definedness(format)
+            }),
         _ => false,
     }
 }
