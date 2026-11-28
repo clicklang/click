@@ -6,10 +6,9 @@
 //! representability. Unsigned overflow remains wrapping arithmetic.
 
 use super::{FORMATS, Operation, comparison::ComparisonOperand, range, representation};
-use crate::kernel::OldMachineTerm;
 use crate::kernel::{
-    IntegerComparisonOperator, IntegerTerm, MachineIntegerType, OldConditionTerm, Proposition,
-    SharedIntegerTerm,
+    IntegerComparisonOperator, IntegerTerm, MachineIntegerType, MachineOperandView,
+    OldConditionTerm, Proposition, SharedIntegerTerm,
 };
 
 /// The formats whose definedness facts the kernel files, narrowest first:
@@ -29,15 +28,10 @@ pub(crate) fn defined_formats() -> impl Iterator<Item = MachineIntegerType> {
 /// read the definedness fact as these bounds
 /// ([`definedness_of_integer_bound`] checks a listed one).
 pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Proposition> {
-    let Proposition::ConditionIs(condition, false) = proposition else {
+    let Some((format, operation, operands)) = written_nonoverflow(proposition) else {
         return Vec::new();
     };
-    let Some((ty, operation, left, right)) =
-        representation::overflow_operation(condition.old_form())
-    else {
-        return Vec::new();
-    };
-    bounds_for_operation(ty, operation, left, right)
+    bounds_for_operation(format, operation, operands)
         .into_iter()
         .flatten()
         .collect()
@@ -46,12 +40,20 @@ pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Pr
 pub(in crate::kernel) fn bounds_for_operation(
     format: MachineIntegerType,
     operation: Operation,
-    left: &OldMachineTerm,
-    right: &OldMachineTerm,
+    operands: [MachineOperandView<'_>; 2],
 ) -> Option<[Proposition; 2]> {
-    let left = IntegerTerm::from_machine(format, left.clone())?;
-    let right = IntegerTerm::from_machine(format, right.clone())?;
-    Some(ordinary_bounds(format, operation.exact(left, right)))
+    Some(ordinary_bounds(
+        format,
+        exact_result(format, operation, operands)?,
+    ))
+}
+
+fn exact_result(
+    format: MachineIntegerType,
+    operation: Operation,
+    [left, right]: [MachineOperandView<'_>; 2],
+) -> Option<IntegerTerm> {
+    Some(operation.exact(left.observe(format)?, right.observe(format)?))
 }
 
 pub(crate) fn ordinary_bounds(format: MachineIntegerType, exact: IntegerTerm) -> [Proposition; 2] {
@@ -106,20 +108,18 @@ impl OverflowQueryView {
     pub(crate) fn from_operands(
         format: MachineIntegerType,
         operation: Operation,
-        operands: [crate::kernel::MachineOperandView<'_>; 2],
+        operands: [MachineOperandView<'_>; 2],
     ) -> Option<Self> {
         if !representation::has_overflow_test(format) {
             return None;
         }
-        let exact = operation.exact(operands[0].observe(format)?, operands[1].observe(format)?);
+        let exact = exact_result(format, operation, operands)?;
         Some(Self {
             format,
             operation,
             operands: operands.map(|operand| match operand {
-                crate::kernel::MachineOperandView::Old(term) => {
-                    ComparisonOperand::Constant(term.clone())
-                }
-                crate::kernel::MachineOperandView::Shared(_) => {
+                MachineOperandView::Old(term) => ComparisonOperand::Constant(term.clone()),
+                MachineOperandView::Shared(_) => {
                     ComparisonOperand::Observation(operand.retain(format))
                 }
             }),
@@ -249,25 +249,47 @@ pub(crate) fn ordinary_arithmetic_guard_view(
     .then_some(query)
 }
 
-/// Read a complete ordinary range domain or an explicitly written legacy
+/// Read a complete ordinary range domain or an explicitly written
 /// nonoverflow condition, retaining the operand handles in either case.
 pub(crate) fn range_domain_query(proposition: &Proposition) -> Option<OverflowQueryView> {
-    if let Some(query) = ordinary_arithmetic_guard_view(proposition) {
-        return Some(query);
-    }
+    ordinary_arithmetic_guard_view(proposition).or_else(|| {
+        let (format, operation, operands) = written_nonoverflow(proposition)?;
+        OverflowQueryView::from_operands(format, operation, operands)
+    })
+}
+
+fn written_nonoverflow(
+    proposition: &Proposition,
+) -> Option<(MachineIntegerType, Operation, [MachineOperandView<'_>; 2])> {
+    use crate::kernel::BooleanOperandView;
     let Proposition::ConditionIs(condition, false) = proposition else {
         return None;
     };
-    let (format, operation, left, right) =
-        representation::overflow_operation(condition.old_form())?;
-    OverflowQueryView::from_operands(
-        format,
-        operation,
-        [
-            crate::kernel::MachineOperandView::Old(left),
-            crate::kernel::MachineOperandView::Old(right),
-        ],
-    )
+    // A native producer may have retained the exact written operands.
+    let view = condition
+        .root()
+        .and_then(|root| root.cached_condition_output())
+        .map(BooleanOperandView::Native)
+        .unwrap_or_else(|| condition.operand_view());
+    let (format, operation, operands) = view.overflow()?;
+    let operation = Operation::from_overflow(operation)?;
+    if !representation::has_overflow_test(format) {
+        return None;
+    }
+    // Opaque operands retain their written producer or read scope. Some,
+    // including conversions of opaque Integer arguments, cannot be retained
+    // by the shared machine observation store.
+    let operands = if operands.iter().any(|operand| {
+        matches!(operand, MachineOperandView::Shared(root)
+        if root.has_opaque_observation_boundary() || !root.is_shared_machine_operand())
+    }) {
+        BooleanOperandView::Native(condition.old_form())
+            .overflow()?
+            .2
+    } else {
+        operands
+    };
+    Some((format, operation, operands))
 }
 
 /// Private input form for the existing interval proof rules. Stored facts,
@@ -293,6 +315,8 @@ pub(crate) fn interval_query_form(proposition: &Proposition) -> Option<Propositi
 #[cfg(test)]
 mod shared_query_tests {
     use super::*;
+    use crate::kernel::OldMachineTerm;
+
     fn legacy_overflow_query(
         bound: &Proposition,
         formats: impl Iterator<Item = MachineIntegerType>,
@@ -413,6 +437,64 @@ mod shared_query_tests {
                                 "{format:?} {operation:?}: {bound:?}"
                             );
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_shared_overflow_reads_match_written_bounds_without_exporting() {
+        use crate::kernel::{
+            KernelTermExport, KernelTermImport, MachineBinaryOp, MachineCastSpelling,
+            OverflowOperation, StoredConditionTerm, Variable,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in FORMATS {
+            let variable = OldMachineTerm::Variable(Variable(982204));
+            let words = [
+                variable.clone(),
+                OldMachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(variable.clone()),
+                    right: Box::new(variable.clone()),
+                },
+                OldMachineTerm::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: MachineIntegerType::Int32,
+                    to: format,
+                    value: Box::new(variable),
+                },
+            ];
+            for word in words {
+                for op in [
+                    OverflowOperation::Add,
+                    OverflowOperation::Subtract,
+                    OverflowOperation::Multiply,
+                    OverflowOperation::Divide,
+                    OverflowOperation::ShiftLeft,
+                ] {
+                    let native = OldConditionTerm::Overflows {
+                        format,
+                        op,
+                        left: Box::new(word.clone()),
+                        right: Box::new(range::constant_word(format, &1.into()).unwrap()),
+                    };
+                    let root = KernelTermImport::for_exact_field_inputs().condition(&native);
+                    let stored = StoredConditionTerm::from_root(root.clone()).unwrap();
+                    for polarity in [true, false] {
+                        let expected = Proposition::condition_is(native.clone(), polarity);
+                        let actual = Proposition::condition_is(stored.clone(), polarity);
+                        let expected_bounds = integer_bounds_of_definedness(&expected);
+                        let expected_query = range_domain_query(&expected);
+                        let before = KernelTermExport::machine_export_count();
+                        let bounds = integer_bounds_of_definedness(&actual);
+                        let query = range_domain_query(&actual);
+                        assert_eq!(KernelTermExport::machine_export_count(), before);
+                        assert!(!root.has_cached_native_argument());
+                        assert_eq!(bounds, expected_bounds, "{format:?} {op:?} {word:?}");
+                        assert_eq!(query.map(|q| q.exact), expected_query.map(|q| q.exact));
                     }
                 }
             }

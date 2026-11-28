@@ -1350,7 +1350,11 @@ impl PureFactContext {
         let bounds = Operation::from_overflow(op)
             .filter(|_| representation::has_overflow_test(format))
             .and_then(|operation| {
-                definedness::bounds_for_operation(format, operation, left, right)
+                definedness::bounds_for_operation(
+                    format,
+                    operation,
+                    [left, right].map(MachineOperandView::Old),
+                )
             });
         let from_bounds = bounds.as_ref().is_some_and(|bounds| {
             bounds.iter().all(|bound| {
