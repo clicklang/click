@@ -1309,6 +1309,11 @@ impl ProofClauseScope {
         function: &crate::languages::interface::ImportedFunction,
         site_bindings: Option<&syntax::CSourceBindings>,
     ) -> Self {
+        // Only the C front end records the scope at each position so far;
+        // a Rust or C++ function's clauses are not checked yet.
+        if function.body_end_scope().is_none() {
+            return Self(());
+        }
         let mut declarations = Declarations::of_function(function);
         declarations.source_bindings = site_bindings.cloned();
         PROOF_CLAUSE_SCOPE.with(|scope| *scope.borrow_mut() = Some(declarations));

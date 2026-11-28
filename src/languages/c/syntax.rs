@@ -2491,6 +2491,21 @@ impl CSite {
         self.0.is_none()
     }
 
+    /// This site, for the parts of its loop the loop's scope covers: the
+    /// declarations visible at the loop head, when the site records them.
+    fn in_loop_scope(&self) -> Self {
+        let Some(site) = &self.0 else {
+            return Self::NONE;
+        };
+        let Some(bindings) = &site.source_bindings else {
+            return self.clone();
+        };
+        Self(Some(std::sync::Arc::new(CStatementSite {
+            scope: Some(CSourceBindings::clone(bindings)),
+            ..CStatementSite::clone(site)
+        })))
+    }
+
     /// This site, recording that its statement is the one at `path` and
     /// starts where `scope` is visible.
     fn at_source_statement(
@@ -9766,7 +9781,7 @@ impl Parser {
         let previous_goto_scope_start =
             std::mem::replace(&mut self.goto_scope_start, function_body_scope);
         let previous_bit_field_flag = std::mem::replace(&mut self.function_has_bit_fields, false);
-        let body_result = self.parse_block_statement();
+        let body_result = self.parse_block_statement_with_end_scope();
         self.function_has_compound_literals = previous_literal_flag;
         self.function_has_goto = previous_goto_flag;
         self.goto_scope_start = previous_goto_scope_start;
@@ -9787,7 +9802,7 @@ impl Parser {
             previous_address_taken_variables,
         );
         self.postfix_copy_value_parameters = previous_postfix_copy_value_parameters;
-        let mut body = body_result?;
+        let (mut body, body_end_scope) = body_result?;
         self.pop_scope();
         self.out_of_scope_names.clear();
         validate_function_returns(&body, header.return_type)?;
@@ -9901,6 +9916,7 @@ impl Parser {
             local_pointers,
             string_literals,
             loop_iterators: Vec::new(),
+            body_end_scope: Some(body_end_scope),
         })
     }
 
@@ -11774,6 +11790,15 @@ impl Parser {
     }
 
     fn parse_block_statement(&mut self) -> Result<CStatement, CSyntaxError> {
+        self.parse_block_statement_with_end_scope()
+            .map(|(body, _)| body)
+    }
+
+    /// A block, and the declarations visible at its end, before its closing
+    /// brace ends its scope.
+    fn parse_block_statement_with_end_scope(
+        &mut self,
+    ) -> Result<(CStatement, CSourceBindings), CSyntaxError> {
         self.expect(Token::LBrace)?;
         if self.current_function_source_name.is_some() {
             self.function_block_depth += 1;
@@ -11790,12 +11815,13 @@ impl Parser {
         let body = balanced_statement_sequence(statements).unwrap_or(CStatement::Skip);
         let body = self.lower_call_expressions(body)?;
         let body = self.finish_compound_literal_block(body);
+        let end_scope = self.visible_bindings.clone();
         self.pop_scope();
         if self.current_function_source_name.is_some() {
             self.function_block_depth -= 1;
         }
 
-        Ok(body)
+        Ok((body, end_scope))
     }
 
     /// Parses the supported C `switch` shape: a compound statement whose
@@ -21856,8 +21882,11 @@ fn fill_missing_sites(statement: &mut CStatement, site: &CSite) {
     if site.is_none() {
         return;
     }
-    let mut pending = vec![statement];
-    while let Some(next) = pending.pop() {
+    // A `for` statement's test, step and body are in the loop's scope,
+    // which includes what its initializer declares.
+    let loop_site = site.in_loop_scope();
+    let mut pending = vec![(statement, site)];
+    while let Some((next, site)) = pending.pop() {
         if let Some(own) = next.site_mut() {
             if !own.is_none() {
                 continue;
@@ -21866,22 +21895,22 @@ fn fill_missing_sites(statement: &mut CStatement, site: &CSite) {
         }
         match next {
             CStatement::Seq(first, second) => {
-                pending.push(second);
-                pending.push(first);
+                pending.push((second, site));
+                pending.push((first, site));
             }
-            CStatement::Label { statement, .. } => pending.push(statement),
+            CStatement::Label { statement, .. } => pending.push((statement, site)),
             CStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => {
-                pending.push(else_branch);
-                pending.push(then_branch);
+                pending.push((else_branch, site));
+                pending.push((then_branch, site));
             }
             CStatement::While { test, body, .. } | CStatement::DoWhile { test, body, .. } => {
-                pending.push(body);
+                pending.push((body, site));
                 if let Some(test) = test {
-                    pending.push(test);
+                    pending.push((test, site));
                 }
             }
             CStatement::For {
@@ -21891,15 +21920,15 @@ fn fill_missing_sites(statement: &mut CStatement, site: &CSite) {
                 body,
                 ..
             } => {
-                pending.push(body);
-                pending.push(step);
-                pending.push(initializer);
+                pending.push((body, &loop_site));
+                pending.push((step, &loop_site));
+                pending.push((initializer, site));
                 if let Some(test) = test {
-                    pending.push(test);
+                    pending.push((test, &loop_site));
                 }
             }
             CStatement::Switch { cases, .. } => {
-                pending.extend(cases.iter_mut().map(|case| case.body.as_mut()));
+                pending.extend(cases.iter_mut().map(|case| (case.body.as_mut(), site)));
             }
             _ => {}
         }
