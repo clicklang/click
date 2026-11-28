@@ -235,6 +235,8 @@ fn fixed_measure_state(expression: &SyntaxTerm) -> Option<FixedMeasureState> {
 
 mod comparison_elaboration;
 mod declarations;
+#[cfg(debug_assertions)]
+mod declared_scope;
 mod elaborator;
 mod typing_environment;
 use declarations::Declarations;

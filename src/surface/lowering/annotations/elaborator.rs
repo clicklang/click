@@ -1344,12 +1344,18 @@ pub(super) fn check_front_end_scope(
         return;
     };
     crate::instrumentation::uncharged_debug_check(|| {
+        let scope = super::declared_scope::DeclaredScope {
+            declarations: &declarations,
+            integer_values: &context.integer_values,
+            algebraic_values: &context.algebraic_values,
+            contract_result_in_scope: context.contract_result_in_scope,
+        };
         let front_end = Elaborator {
-            declarations,
+            declarations: declarations.clone(),
             ..lowerer.elaborator()
         };
         assert_eq!(
-            &front_end.elaborate_clause(proposition, &TypingEnvironment::of(context)),
+            &front_end.elaborate_clause(proposition, &TypingEnvironment::in_scope(&scope)),
             elaborated,
             "proof clause `{proposition:?}` elaborates differently from the front end's declarations at its position"
         );
