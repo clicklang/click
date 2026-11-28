@@ -21,12 +21,20 @@ pub(crate) struct ContractClosingContext {
     effect_claims: Vec<FunctionContractClaim>,
     retained_entry: Option<Arc<PreparedContractEntryCases>>,
     entry: OnceLock<Result<RetainedClosingFootprint, ContractClosingRefusal>>,
+    // Both bindings use the exact caller snapshot captured at completion.
+    // A retry still checks the current outcome and its current assumptions.
+    transition_caller: ExecutionState,
+    transition_entry: OnceLock<Option<crate::kernel::functions::ReturnResourceEntry>>,
 }
 
 impl ContractClosingContext {
     #[cfg(test)]
     pub(crate) fn new(execution: &CheckedFunctionExecution) -> Arc<Self> {
-        Self::for_resource_prefix(execution, execution.function.resource_ensures().len())
+        Self::for_resource_prefix(
+            execution,
+            execution.function.resource_ensures().len(),
+            execution.allocation_entry_state(),
+        )
     }
 
     /// A clause-specific proof owes its jointly returned prefix, not clauses
@@ -34,6 +42,7 @@ impl ContractClosingContext {
     pub(crate) fn for_resource_prefix(
         execution: &CheckedFunctionExecution,
         resource_prefix: usize,
+        transition_caller: &ExecutionState,
     ) -> Arc<Self> {
         crate::instrumentation::record_deterministic_work(execution.arguments.len() + 1);
         let complete_boundary = resource_prefix >= execution.function.resource_ensures().len();
@@ -77,6 +86,8 @@ impl ContractClosingContext {
                 .as_ref()
                 .map(|authority| authority.cases().clone()),
             entry: OnceLock::new(),
+            transition_caller: transition_caller.clone(),
+            transition_entry: OnceLock::new(),
         })
     }
 
@@ -290,17 +301,59 @@ impl ContractExitObligations {
     /// any retained boundary refusal the resource producer does not cover.
     pub(crate) fn apply_resource_transition(
         &self,
-        caller: &ExecutionState,
         outcome: FunctionOutcome,
         assumptions: &PureFactContext,
     ) -> Result<(Self, FunctionOutcome), String> {
-        let outcome = checked_program_function_contract_resource_transition(
-            caller,
-            &self.context.function,
-            &self.context.arguments,
+        let caller_state = &self.context.transition_caller;
+        let function = &self.context.function;
+        let arguments = &self.context.arguments;
+        // The transition replaces the body's resources with the ones the
+        // contract returns, so it publishes them, a produced composite included.
+        // Publish only what the body establishes by the rule certification
+        // applies, which assembles a composite from pieces only when its body
+        // facts hold on this path.
+        if matches!(outcome, FunctionOutcome::Return { .. })
+            && !self
+                .context
+                .transition_entry
+                .get_or_init(|| {
+                    crate::kernel::functions::ReturnResourceEntry::bind(
+                        caller_state,
+                        function,
+                        arguments,
+                    )
+                })
+                .as_ref()
+                .is_some_and(|entry| {
+                    crate::kernel::functions::function_return_resources_definitionally_established(
+                        caller_state,
+                        function,
+                        arguments,
+                        &outcome,
+                        assumptions,
+                        Some(entry),
+                    )
+                })
+        {
+            return Err(
+                "the body outcome does not establish the contract's returned resources".into(),
+            );
+        }
+        let (outcome, obligations) = apply_program_function_contract_resource_transition(
+            caller_state,
+            function,
+            arguments,
             outcome,
             assumptions,
         )?;
+        if let Some(obligation) = obligations.iter().find(|obligation| {
+            !crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
+        }) {
+            return Err(format!(
+                "unproved contract resource obligation: {}",
+                obligation.context().unwrap_or("resource transition"),
+            ));
+        }
         if let FunctionOutcome::RuntimeError(error) = &outcome {
             return Err(error.kernel_summary());
         }

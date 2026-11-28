@@ -2791,8 +2791,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. }
         )
     {
-        match required_outcome(outcome_proof)?.apply_outcome_contract_resources(pre_state, function)
-        {
+        match required_outcome(outcome_proof)?.apply_outcome_contract_resources() {
             Ok(transitioned) => {
                 *outcome = transitioned.focused_outcome_state()?;
                 *resource_transition_applied = true;
@@ -3919,6 +3918,7 @@ pub(super) fn finish_ordered_proof<'a>(
         let closing_context = crate::kernel::ContractClosingContext::for_resource_prefix(
             &completed_execution,
             resource_prefix,
+            pre_state,
         );
         let mut contract_owner = outcome_substrate.open_contract_execution(
             completed_execution.clone(),
@@ -4354,7 +4354,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 &assumptions_from_propositions(&path_requirements),
                             )
                             && let Ok(transitioned) = required_outcome(&outcome_proof)?
-                                .apply_outcome_contract_resources(pre_state, function)
+                                .apply_outcome_contract_resources()
                         {
                             outcome = transitioned.focused_outcome_state()?;
                             resource_transition_applied = true;
@@ -4965,7 +4965,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             )
                                     })
                                     && let Ok(transitioned) = required_outcome(&outcome_proof)?
-                                        .apply_outcome_contract_resources(pre_state, function)
+                                        .apply_outcome_contract_resources()
                                 {
                                     outcome = transitioned.focused_outcome_state()?;
                                     return_claim_context = None;
@@ -5189,7 +5189,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     );
                                     if established
                                         && let Ok(transitioned) = required_outcome(&outcome_proof)?
-                                            .apply_outcome_contract_resources(pre_state, function)
+                                            .apply_outcome_contract_resources()
                                     {
                                         outcome = transitioned.focused_outcome_state()?;
                                         return_claim_context = None;

@@ -17473,6 +17473,34 @@ pub(super) fn expose_composite_resource_fact(
 mod composite_expansion;
 pub(crate) use composite_expansion::*;
 
+/// The facts-independent argument bindings used by the return resource check.
+pub(crate) struct ReturnResourceEntry {
+    callee: ExecutionState,
+    resource_view: ExecutionState,
+}
+
+impl ReturnResourceEntry {
+    pub(crate) fn bind(
+        caller: &ExecutionState,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+    ) -> Option<Self> {
+        let values = arguments
+            .iter()
+            .map(|argument| match argument {
+                ProgramExpression::Value(value) => Some(value.clone()),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let callee = bind_program_function_arguments(caller, function, &values)?;
+        let resource_view = with_contract_argument_views(caller, function, &values);
+        Some(Self {
+            callee,
+            resource_view,
+        })
+    }
+}
+
 /// Whether a body outcome establishes every resource the contract returns,
 /// by the rule contract certification applies to a `produces` claim: each
 /// returned resource, read as one jointly returned context, is satisfied by
@@ -17486,26 +17514,22 @@ pub(super) fn function_return_resources_definitionally_established(
     arguments: &[ProgramExpression],
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
+    prepared_entry: Option<&ReturnResourceEntry>,
 ) -> bool {
     let (value, return_state, exceptional) = match outcome {
         FunctionOutcome::Return { value, state } => (value, state, false),
         FunctionOutcome::Throw { value, state } => (value, state, true),
         _ => return false,
     };
-    let Some(argument_values) = arguments
-        .iter()
-        .map(|argument| match argument {
-            ProgramExpression::Value(value) => Some(value.clone()),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return false;
-    };
-    let Some(callee_state) =
-        bind_program_function_arguments(caller_state, function, &argument_values)
-    else {
-        return false;
+    let bound;
+    let entry = if let Some(entry) = prepared_entry {
+        entry
+    } else {
+        let Some(entry) = ReturnResourceEntry::bind(caller_state, function, arguments) else {
+            return false;
+        };
+        bound = entry;
+        &bound
     };
     let exit_memory = if exceptional {
         return_state.memory().clone()
@@ -17531,7 +17555,7 @@ pub(super) fn function_return_resources_definitionally_established(
     };
     let post_resource_facts = post_resources.observable_facts_assuming_valid(assumptions);
     let assumptions = assumptions_with_propositions(assumptions, &post_resource_facts);
-    let mut post_state = callee_state.with_memory_and_resources_continuing(
+    let mut post_state = entry.callee.clone().with_memory_and_resources_continuing(
         &claim_return_state,
         exit_memory,
         post_resources,
@@ -17565,11 +17589,9 @@ pub(super) fn function_return_resources_definitionally_established(
     {
         return false;
     }
-    let entry_resource_state =
-        with_contract_argument_views(caller_state, function, &argument_values);
     if !matches!(
         check_wildcard_consumption_at_return(
-            &entry_resource_state,
+            &entry.resource_view,
             return_state,
             function.contract_interface(),
             &assumptions,
@@ -17578,7 +17600,7 @@ pub(super) fn function_return_resources_definitionally_established(
         Ok(Ok(()))
     ) || !matches!(
         check_acquired_control_member_effects(
-            &entry_resource_state,
+            &entry.resource_view,
             return_state,
             function.contract_interface(),
             &assumptions,
@@ -17591,7 +17613,7 @@ pub(super) fn function_return_resources_definitionally_established(
     let Ok(Ok(expected)) = evaluate_function_return_resource_context(
         function,
         &[],
-        &entry_resource_state,
+        &entry.resource_view,
         &post_state,
         function.resource_ensures().len(),
         &assumptions,

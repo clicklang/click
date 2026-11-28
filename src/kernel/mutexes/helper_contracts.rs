@@ -779,6 +779,7 @@ mod tests {
                 state: Box::new(returned.clone()),
             },
             &PureFactContext::new(),
+            None,
         )
     }
 

@@ -4566,6 +4566,7 @@ pub fn program_function_return_resources_definitionally_established(
                 arguments,
                 outcome,
                 assumptions,
+                None,
             )
         },
     )
@@ -4604,49 +4605,6 @@ pub fn apply_program_function_contract_resource_transition(
 /// Commits a proposed return-resource exchange only after its verification
 /// conditions have been established in the supplied checked context. The
 /// proposal API above also serves callers that retain explicit obligations.
-pub(crate) fn checked_program_function_contract_resource_transition(
-    caller_state: &ExecutionState,
-    function: &ProgramFunction,
-    arguments: &[ProgramExpression],
-    outcome: FunctionOutcome,
-    assumptions: &PureFactContext,
-) -> Result<FunctionOutcome, String> {
-    // The transition replaces the body's resources with the ones the
-    // contract returns, so it publishes them, a produced composite included.
-    // Publish only what the body establishes by the rule certification
-    // applies, which assembles a composite from pieces only when its body
-    // facts hold on this path.
-    if matches!(outcome, FunctionOutcome::Return { .. })
-        && !function_return_resources_definitionally_established(
-            caller_state,
-            function,
-            arguments,
-            &outcome,
-            assumptions,
-        )
-    {
-        return Err(
-            "the body outcome does not establish the contract's returned resources".to_string(),
-        );
-    }
-    let (outcome, obligations) = apply_program_function_contract_resource_transition(
-        caller_state,
-        function,
-        arguments,
-        outcome,
-        assumptions,
-    )?;
-    if let Some(obligation) = obligations.iter().find(|obligation| {
-        !crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
-    }) {
-        return Err(format!(
-            "unproved contract resource obligation: {}",
-            obligation.context().unwrap_or("resource transition"),
-        ));
-    }
-    Ok(outcome)
-}
-
 /// Prepares the count interpretation used to prove a function's return
 /// resource invariants, without transferring the body's ownership. This
 /// creates no theorem or invariant facts: the eventual specification must
