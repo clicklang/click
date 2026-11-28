@@ -1458,19 +1458,21 @@ impl KernelTerm {
             C::Cast | C::SignCast => self.checking_machine_cast(source, destination),
             C::LowWord => self.checking_low_word(),
             C::Reinterpret64 if destination.format().is_signed() => self.clone(),
-            C::Reinterpret64 => {
-                if matches!(
-                    self.node(),
-                    KernelTermNode::MachineCast {
-                        encoding: E::UInt64FromInt64,
-                        ..
-                    }
-                ) {
-                    self.clone()
-                } else {
+            C::Reinterpret64 => match self.node() {
+                KernelTermNode::MachineCast {
+                    encoding: E::Generic,
+                    source: MachineIntegerType::UInt64,
+                    destination: MachineIntegerType::Int64,
+                    operand,
+                } => operand.clone(),
+                KernelTermNode::MachineCast {
+                    encoding: E::UInt64FromInt64,
+                    ..
+                } => self.clone(),
+                _ => {
                     Self::checking_cast_node(self.clone(), source, destination, E::UInt64FromInt64)
                 }
-            }
+            },
             C::Extend64 => {
                 let encoding = match (
                     source.format().is_signed(),

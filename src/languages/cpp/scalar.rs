@@ -238,14 +238,16 @@ impl ScalarLiteral {
     }
 }
 
-/// Clang has already resolved both integer types. C++20 selects the shared
-/// modulo policy explicitly; Boolean conversions retain their separate rules.
+/// Clang has already resolved both integer types. C++20 selects modulo
+/// conversion explicitly, including the signed observation of a 64-bit word.
 pub(super) fn convert(
     value: ProgramExpression,
     source: ScalarKind,
     target: ScalarKind,
 ) -> ProgramExpression {
-    if source.is_integer() && target.is_integer() {
+    if source == ScalarKind::UInt64 && target == ScalarKind::Int64 {
+        kernel::program_expression::uint64_bits_to_int64(value)
+    } else if source.is_integer() && target.is_integer() {
         kernel::program_expression::integer_cast_modulo(value, target.kernel_type())
     } else {
         kernel::program_expression::cast(value, target.kernel_type())
@@ -596,7 +598,7 @@ mod tests {
         let variable = crate::kernel::program_expression::variable("wide");
         assert_eq!(
             convert(variable.clone(), ScalarKind::UInt64, ScalarKind::Int64),
-            kernel::program_expression::integer_cast_modulo(variable, ProgramType::Int64)
+            kernel::program_expression::uint64_bits_to_int64(variable)
         );
     }
 }
