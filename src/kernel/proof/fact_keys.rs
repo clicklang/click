@@ -389,7 +389,8 @@ fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedP
             MemoryErasedPropositionKey::Exact(proposition.clone())
         }
         Proposition::ConditionIs(condition, value) => MemoryErasedPropositionKey::Condition(
-            memory_erased_condition_key(condition.old_form()),
+            memory_erased_pointer_condition_key(condition.operand_view())
+                .unwrap_or_else(|| memory_erased_condition_key(condition.old_form())),
             *value,
         ),
         Proposition::Implies(left, right) => MemoryErasedPropositionKey::Implies(
@@ -509,25 +510,32 @@ fn memory_erased_boolean_operand_key(
             memory_operands::operand(b),
         );
     }
+    memory_erased_pointer_condition_key(condition)
+        .unwrap_or_else(|| memory_erased_condition_key(&condition.native()))
+}
+
+fn memory_erased_pointer_condition_key(
+    condition: crate::kernel::BooleanOperandView<'_>,
+) -> Option<MemoryErasedConditionKey> {
     if let Some([a, b]) = condition.pointer_offsets() {
-        return MemoryErasedConditionKey::AddressOffsetEqual(
+        return Some(MemoryErasedConditionKey::AddressOffsetEqual(
             pointer_keys::state_offset(&a),
             pointer_keys::state_offset(&b),
-        );
+        ));
     }
     if let Some([a, b]) = condition.pointer_values() {
-        return MemoryErasedConditionKey::PointerEqual(
+        return Some(MemoryErasedConditionKey::PointerEqual(
             pointer_keys::recorded_value(&a),
             pointer_keys::recorded_value(&b),
-        );
+        ));
     }
     if let Some([a, b]) = condition.pointer_addresses() {
-        return MemoryErasedConditionKey::AddressEqual(
+        return Some(MemoryErasedConditionKey::AddressEqual(
             pointer_keys::state_address(&a),
             pointer_keys::state_address(&b),
-        );
+        ));
     }
-    memory_erased_condition_key(&condition.native())
+    None
 }
 
 fn memory_erased_condition_key(condition: &OldConditionTerm) -> MemoryErasedConditionKey {
@@ -5380,6 +5388,22 @@ mod machine_quantifier_identity_tests {
 mod pointer_index_tests;
 
 #[cfg(test)]
+fn assert_pointer_proposition_keys(
+    root: &crate::kernel::KernelTerm,
+    expected: &MemoryErasedConditionKey,
+) {
+    let condition = crate::kernel::StoredConditionTerm::from_root(root.clone()).unwrap();
+    for truth in [true, false] {
+        let goal = Proposition::ConditionIs(condition.clone(), truth);
+        assert_eq!(
+            memory_erased_proposition_key(&goal),
+            MemoryErasedPropositionKey::Condition(expected.clone(), truth),
+        );
+    }
+    assert!(root.cached_condition_output().is_none());
+}
+
+#[cfg(test)]
 mod offset_condition_tests {
     use super::*;
     #[test]
@@ -5405,6 +5429,7 @@ mod offset_condition_tests {
                     crate::kernel::BooleanOperandView::Shared(&root),
                 );
                 assert_eq!(actual, expected);
+                assert_pointer_proposition_keys(&root, &actual);
                 assert!(!keys.contains(&actual));
                 keys.push(actual);
             }
@@ -5439,6 +5464,7 @@ mod raw_pointer_condition_tests {
             let actual =
                 memory_erased_boolean_operand_key(crate::kernel::BooleanOperandView::Shared(&root));
             assert_eq!(actual, memory_erased_condition_key(&source));
+            assert_pointer_proposition_keys(&root, &actual);
             assert!(!keys.contains(&actual));
             keys.push(actual);
         }
@@ -5470,6 +5496,7 @@ mod complete_pointer_condition_tests {
             let actual =
                 memory_erased_boolean_operand_key(crate::kernel::BooleanOperandView::Shared(&root));
             assert_eq!(actual, memory_erased_condition_key(&source));
+            assert_pointer_proposition_keys(&root, &actual);
             assert!(!keys.contains(&actual));
             keys.push(actual);
         }
