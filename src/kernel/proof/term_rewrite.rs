@@ -688,9 +688,40 @@ fn collect_shared_condition_carriers<'a>(
 }
 
 fn collect_float_carriers(operands: &[KernelTerm], variables: &mut CarrierVariables) {
-    let mut pending: Vec<_> = operands.iter().rev().collect();
+    struct CallArguments<'a> {
+        machine_carriers: std::slice::Iter<'a, Option<SharedMachineIntegerTerm>>,
+        seen: BTreeSet<u64>,
+    }
+
+    // Each frame advances left to right, including when a float argument
+    // opens a nested call. Only the active calls retain argument state.
+    let mut pending = vec![(operands.iter(), None::<CallArguments>)];
     let mut seen = std::collections::HashSet::new();
-    while let Some(term) = pending.pop() {
+    while let Some((children, call)) = pending.last_mut() {
+        let Some(term) = children.next() else {
+            pending.pop();
+            continue;
+        };
+        if let Some(call) = call {
+            if !variables.visit() {
+                return;
+            }
+            if let Some(machine) = call
+                .machine_carriers
+                .next()
+                .expect("carrier per float call argument")
+            {
+                collect_machine_carriers(machine, variables);
+                continue;
+            }
+            if FloatOperandView::from_shared(term).is_none() {
+                let argument = KernelTermExport::default()
+                    .argument(term)
+                    .expect("float call argument");
+                collect_argument_carriers(&argument, variables, &mut call.seen);
+                continue;
+            }
+        }
         if variables.pointer_terms.is_none() && !seen.insert(term.id()) {
             continue;
         }
@@ -698,13 +729,15 @@ fn collect_float_carriers(operands: &[KernelTerm], variables: &mut CarrierVariab
             return;
         }
         match term.node() {
-            KernelTermNode::FloatBinary { arguments, .. } => pending.extend(arguments.iter().rev()),
-            KernelTermNode::FloatNegate { operand } => pending.push(operand),
+            KernelTermNode::FloatBinary { arguments, .. } => pending.push((arguments.iter(), None)),
+            KernelTermNode::FloatNegate { operand } => {
+                pending.push((std::slice::from_ref(operand).iter(), None))
+            }
             KernelTermNode::FloatConvert {
                 source, operand, ..
             } => {
                 if KernelFloatType::from_program_type(*source).is_some() {
-                    pending.push(operand);
+                    pending.push((std::slice::from_ref(operand).iter(), None));
                 } else {
                     // Preserve the written machine input, including repeated read occurrences.
                     collect_bitvector_carriers(
@@ -720,12 +753,14 @@ fn collect_float_carriers(operands: &[KernelTerm], variables: &mut CarrierVariab
             KernelTermNode::FloatRead(read) if variables.read_terms.is_none() => {
                 collect_shared_address_carriers(read.parts().1, variables);
             }
-            KernelTermNode::FloatCall(_) => {
-                // Call arguments can retain producer-specific machine carriers.
-                collect_program_value_carriers(
-                    &KernelTermExport::float(term).expect("float call"),
-                    variables,
-                );
+            KernelTermNode::FloatCall(call) => {
+                pending.push((
+                    call.arguments.iter(),
+                    Some(CallArguments {
+                        machine_carriers: call.shared_machine_arguments.iter(),
+                        seen: BTreeSet::new(),
+                    }),
+                ));
             }
             _ => collect_bitvector_carriers(
                 FloatOperandView::Shared(term)
@@ -8566,6 +8601,44 @@ mod tests {
             vec![a.clone(), b.clone(), a, b]
         );
         assert!(!root.has_cached_native_argument());
+    }
+
+    #[test]
+    fn float_call_pointer_occurrences_follow_mixed_argument_order() {
+        let _session = VerificationSession::enter();
+        let format = KernelFloatType::Float64;
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let a = Address::symbolic(Variable(9911));
+        let b = Address::symbolic(Variable(9912));
+        let read = KernelTerm::float_read(format, point.clone(), a.shared().clone());
+        let word = PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::read_named(
+            point,
+            b.clone(),
+            LoadKind::Int32,
+        )));
+        let nested = KernelTerm::float_call(
+            format,
+            "inner".into(),
+            vec![
+                (KernelTermImport::default().argument(&word), None),
+                (read.clone(), None),
+            ],
+        );
+        let root = KernelTerm::float_call(
+            format,
+            "outer".into(),
+            vec![(read.clone(), None), (nested, None), (read, None)],
+        );
+        let predicate =
+            KernelTerm::float_classify(format, FloatClassification::Finite, root).unwrap();
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(predicate).unwrap(), true);
+        let exports = KernelTermExport::float_export_count();
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            [a.clone(), b, a.clone(), a]
+        );
+        assert_eq!(KernelTermExport::float_export_count(), exports);
     }
 
     #[test]

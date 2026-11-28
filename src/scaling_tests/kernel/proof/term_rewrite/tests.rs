@@ -1453,6 +1453,56 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
 }
 
 #[test]
+fn nested_float_call_carriers_keep_shared_arguments_in_linear_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let format = KernelFloatType::Float64;
+        let word = Variable(982811);
+        let integer = Variable(982812);
+        let machine = SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            OldMachineTerm::Variable(word),
+        );
+        let argument = PureFunctionArgument::SharedMachine(machine.clone());
+        let mut root = KernelTerm::float_call(
+            format,
+            "mixed".into(),
+            vec![
+                (
+                    KernelTermImport::default().argument(&argument),
+                    Some(machine),
+                ),
+                (KernelTerm::variable(KernelType::Integer, integer), None),
+            ],
+        );
+        for _ in 0..depth {
+            root = KernelTerm::float_call(
+                format,
+                "twice".into(),
+                vec![(root.clone(), None), (root, None)],
+            );
+        }
+        let predicate =
+            KernelTerm::float_classify(format, FloatClassification::Finite, root).unwrap();
+        let exports = KernelTermExport::float_export_count();
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&Proposition::condition_is(
+            StoredConditionTerm::from_root(predicate).unwrap(),
+            true,
+        ));
+        assert_eq!(collector.carriers.program_values, BTreeSet::from([word]));
+        assert_eq!(collector.carriers.integer, BTreeSet::from([integer]));
+        assert!(!collector.exhausted());
+        assert!(
+            collector.carriers.nodes <= 3 * depth + 24,
+            "depth {depth}, visits {}",
+            collector.carriers.nodes
+        );
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+    }
+}
+
+#[test]
 fn float_predicates_and_machine_casts_share_arithmetic_carrier_work() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
