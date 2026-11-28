@@ -1499,6 +1499,55 @@ fn stored_word_substitution_and_reservation_visit_shared_arithmetic_once() {
 }
 
 #[test]
+fn sequence_carriers_visit_shared_concatenations_and_numeric_elements_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let input = Variable(982816);
+        let mut word = KernelTerm::variable(KernelType::Program(ProgramType::Int32), input);
+        for _ in 0..depth {
+            word = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [word.clone(), word],
+            );
+        }
+        let element_type = Some(ProgramType::Int32);
+        let mut sequence = SequenceTerm {
+            element_type,
+            node: std::sync::Arc::new(SequenceTermNode::Literal(SequenceValues::from_values([
+                ExecutionValue::Shared(word.clone()),
+            ]))),
+        };
+        for _ in 0..depth {
+            sequence = SequenceTerm {
+                element_type,
+                node: std::sync::Arc::new(SequenceTermNode::Concat(sequence.clone(), sequence)),
+            };
+        }
+        let term = Term::Sequence(sequence);
+        let fact = Proposition::Predicate {
+            name: "sequence".into(),
+            arguments: vec![term.clone()],
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&fact);
+        assert_eq!(collector.carriers.program_values, BTreeSet::from([input]));
+        assert!(!collector.exhausted());
+        assert!(collector.carriers.nodes <= 2 * depth + 8);
+
+        let from = OldMachineTerm::constant(0);
+        let to = OldMachineTerm::constant(1);
+        let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+        rewrite.reserve_term_variables_once(&term);
+        assert!(rewrite.reserved_variables.contains(&input));
+        assert_eq!(rewrite.refusal(), None);
+        assert!(!word.has_cached_native_argument());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+#[test]
 fn stored_numeric_proposition_fields_collect_shared_arithmetic_in_linear_work() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
