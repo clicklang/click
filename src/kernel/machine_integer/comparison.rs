@@ -326,16 +326,16 @@ fn logical_comparison(
     operands: [crate::kernel::MachineOperandView<'_>; 2],
     in_conditional: bool,
 ) -> OldConditionTerm {
-    retained_comparison_for_operand_views(format, relation, operands, in_conditional)
+    retained_comparison_operands(format, operands, in_conditional)
+        .map(|[left, right]| retained_compare(format, relation, left, right))
         .unwrap_or_else(|| condition_for_operand_views_in(format, relation, operands, true))
 }
 
-fn retained_comparison_for_operand_views(
+pub(in crate::kernel) fn retained_comparison_operands(
     format: MachineIntegerType,
-    relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
     in_conditional: bool,
-) -> Option<OldConditionTerm> {
+) -> Option<[OldMachineTerm; 2]> {
     let variables = operands.map(|operand| operand.variable().copied());
     let [left, right] = if matches!(format.format().bits(), 32 | 64)
         && let [Some(left), Some(right)] = variables
@@ -367,7 +367,7 @@ fn retained_comparison_for_operand_views(
             right.or_else(|| comparison_leaf_operand(operands[1]))?,
         ]
     };
-    Some(retained_compare(format, relation, left, right))
+    Some([left, right])
 }
 
 /// The native comparison of two retained operands, without deciding it.

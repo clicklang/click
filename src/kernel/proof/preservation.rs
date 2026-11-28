@@ -443,15 +443,7 @@ fn integer_equality(
         MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
             // The produced equality must have the same shape as its logical
             // goal, including reflexive variables and closed literal operands.
-            crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
-                format,
-                CompareRelation::Equal,
-                [
-                    MachineOperandView::Old(&left),
-                    MachineOperandView::Old(&right),
-                ],
-            )
-            .into()
+            StoredConditionTerm::logical_word64_equality(format, left, right)
         }
         MachineIntegerType::Int128 | MachineIntegerType::UInt128 => {
             StoredConditionTerm::integer_equal(
@@ -1396,7 +1388,7 @@ mod tests {
         let observed = observation_type(comparison_type, bytes, &expected).unwrap();
         let observed_format = if bytes == 8 { comparison } else { format };
         assert_eq!(observed, ReadType::Integer(observed_format));
-        if bytes <= 4 {
+        if bytes <= 8 {
             let derived =
                 observation_equality(&footprint, slot.clone(), observed, comparison_type).unwrap();
             let Proposition::ConditionIs(stored, true) = &derived else {
