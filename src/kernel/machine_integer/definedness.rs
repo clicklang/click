@@ -7,7 +7,10 @@
 
 use super::{FORMATS, Operation, comparison::ComparisonOperand, range, representation};
 use crate::kernel::OldMachineTerm;
-use crate::kernel::{IntegerTerm, MachineIntegerType, OldConditionTerm, Proposition};
+use crate::kernel::{
+    IntegerComparisonOperator, IntegerTerm, MachineIntegerType, OldConditionTerm, Proposition,
+    SharedIntegerTerm,
+};
 
 /// The formats whose definedness facts the kernel files, narrowest first:
 /// those where C arithmetic's overflow is undefined behavior
@@ -52,7 +55,7 @@ pub(in crate::kernel) fn bounds_for_operation(
 }
 
 pub(crate) fn ordinary_bounds(format: MachineIntegerType, exact: IntegerTerm) -> [Proposition; 2] {
-    use crate::kernel::{IntegerComparisonOperator, SharedIntegerTerm, StoredConditionTerm};
+    use crate::kernel::StoredConditionTerm;
     let exact = SharedIntegerTerm::from(exact);
     let (minimum, maximum) = range::range(format);
     [
@@ -149,20 +152,13 @@ pub(crate) fn overflow_query_of_integer_bound(
     bound: &Proposition,
     formats: impl Iterator<Item = MachineIntegerType>,
 ) -> Option<OverflowQueryView> {
-    let Some((
-        OldConditionTerm::IntegerLessEqual(first, second)
-        | OldConditionTerm::IntegerGreaterEqual(first, second),
-        true,
-    )) = bound.old_condition()
-    else {
-        return None;
-    };
-    let exact = if Operation::of_exact(first).is_some() {
+    let (_, [first, second]) = written_bound(bound)?;
+    let exact = if Operation::of_exact(&first).is_some() {
         first
     } else {
         second
     };
-    let (operation, left, right) = Operation::of_exact(exact)?;
+    let (operation, left, right) = Operation::of_exact(&exact)?;
     if !matches!(left, IntegerTerm::Machine(_)) && !matches!(right, IntegerTerm::Machine(_)) {
         return None;
     }
@@ -204,16 +200,33 @@ pub(crate) fn overflow_query_of_integer_bound(
         })
 }
 
-/// The two order spellings of an ordinary bound are the same proposition.
-/// This is comparison matching, never a change to either stored term.
+fn written_bound(
+    bound: &Proposition,
+) -> Option<(IntegerComparisonOperator, [SharedIntegerTerm; 2])> {
+    let Proposition::ConditionIs(condition, true) = bound else {
+        return None;
+    };
+    let comparison = super::comparison::written_integer_comparison(condition.operand_view())?;
+    matches!(
+        comparison.0,
+        IntegerComparisonOperator::LessEqual | IntegerComparisonOperator::GreaterEqual
+    )
+    .then_some(comparison)
+}
+
+/// Same-direction facts use their observation readings (rule W). Mirrored
+/// bounds match the original operands in reverse order.
 fn same_integer_bound(left: &Proposition, right: &Proposition) -> bool {
-    left == right
-        || matches!(&(left, right),
-        (left_source @ Proposition::ConditionIs(_, true), right_source @ Proposition::ConditionIs(_, true))
-        if matches!(left_source.old_condition(), Some((OldConditionTerm::IntegerLessEqual(a, b), _)) if matches!(right_source.old_condition(), Some((OldConditionTerm::IntegerGreaterEqual(c, d), _)) if (a == d) && (b == c))))
-        || matches!(&(left, right),
-            (left_source @ Proposition::ConditionIs(_, true), right_source @ Proposition::ConditionIs(_, true))
-            if matches!(left_source.old_condition(), Some((OldConditionTerm::IntegerGreaterEqual(a, b), _)) if matches!(right_source.old_condition(), Some((OldConditionTerm::IntegerLessEqual(c, d), _)) if (a == d) && (b == c))))
+    let (Some((a, [x, y])), Some((b, [u, v]))) = (written_bound(left), written_bound(right)) else {
+        return left
+            .literal_condition()
+            .is_some_and(|value| right.literal_condition() == Some(value));
+    };
+    if a == b {
+        x.read_through_ref() == u.read_through_ref() && y.read_through_ref() == v.read_through_ref()
+    } else {
+        x == v && y == u
+    }
 }
 
 /// Read one explicitly supplied ordinary range conjunction as an arithmetic
