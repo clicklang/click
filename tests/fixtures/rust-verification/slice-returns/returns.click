@@ -40,3 +40,15 @@ fn slice_returns::named(s: &str) -> &str {
     ensures result.len() == s.len();
     ensures result.as_ptr() == s.as_ptr();
 }
+
+// A proof reads an element through a slice local where it was live, at the
+// slice's element type.
+fn slice_returns::copied(bytes: &[u8]) -> u8 {
+    requires 0u64 < bytes.len();
+    views *bytes;
+    ensures result == bytes[0];
+} by {
+    step_until(function.exit);
+    have at(statement(0).exit, view[0]) == bytes[0];
+    close();
+}

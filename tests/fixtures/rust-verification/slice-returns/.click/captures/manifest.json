@@ -18,22 +18,22 @@
             "profile": "cd1ca7859f005e20d5211850322a37059b3c50e734584f64d53d513b0210fe76"
           },
           "schema": 9,
-          "source": "63064a2a697b03b736476d092048f7216a8dda3123950644a7fa0e76f219eed7"
+          "source": "bd8aea926b44380eb4af9c660cc61ab3ffa694e62cbd1a8fefc69fb597f2da01"
         },
         "sources": {
           "returns.rs": {
             "artifact": {
-              "bytes": 37566,
+              "bytes": 41388,
               "path": ".click/captures/slice_returns/returns.rs.ullbc",
-              "sha256": "5fad70102bb87dc8eb4c4806281b38735a6db9f7cb2772bbefeeebf20d358b99"
+              "sha256": "448b5eec3ac099d150e92485e9683ca25ecd8067f9d46f10125c49c4eea756ec"
             },
-            "identity": "fa5cbf694365d47712b029ac5dd078bfd091a8bdfa3ad68485fdf3f6ae841c5f",
+            "identity": "d20fb59a7088d885057c823c85c2078d9b5597f114f0b246e0fff230d06e77eb",
             "inputs": {
-              "returns.rs": "96676d86626cee77256883d47165225db6baa6f775e8ef26d11893a5b034d0fd"
+              "returns.rs": "ac951b5f1b76b0e13fca6fd75cba09ff710f0d7ec65a05eb160c3cad8a747966"
             }
           }
         },
-        "unit": "9b5c1eeb205f8b4332f3c5cd460c077e8b6fed1a036f588654ea367e72fac5d3"
+        "unit": "e51e4ef276dcc94fa724ba7fa934a587c58e9589c54980292c12a20778539402"
       }
     }
   }

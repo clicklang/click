@@ -932,19 +932,48 @@ construct.
      The goal `at(statement(0).exit, bytes[0]) == bytes[0]` stays open
      ("the two sides read the same address in different memory states"),
      with `at(statement(0).exit, view.as_ptr()) == bytes.as_ptr()` proved.
-     The same holds with no call: in `let view = bytes; view[0]`, `have
-     at(statement(0).exit, view[0]) == bytes[0];` is not proved either. It
-     is a memory-state question for shared views, not a slice-return one.
-     There the goal is `read<Bits32>(state#1, bytes.as_ptr()) ==
-     int32(read<UInt8>(state#1, bytes.as_ptr()))`: the recorded-point read
-     of `view[0]` is a 32-bit read, and the goal raises as `old(bytes[0]) ==
-     (old(bytes[0]) as i32)`, which re-lowers to a provable fact, so it
-     differs from the goal. Neither is fixed. In the caller of a returned
-     slice the kernel goal is `read<UInt8>(state#1, s.as_ptr()) ==
-     read<UInt8>(state#1, s.as_ptr())` with the two loads at different
-     memory versions (a recorded state at the call's region entry and the
-     outcome), so "the two sides read the same address in different memory
-     states" is reported while both sides print alike.
+     It is specific to a read through a slice a call returned (the
+     no-call form below is now proved). In the caller of a returned slice the kernel goal is
+     `read<UInt8>(state#1, s.as_ptr()) == read<UInt8>(state#1, s.as_ptr())`
+     with the two loads at different memory versions, so "the two sides read
+     the same address in different memory states" is reported while both
+     sides print alike.
+
+     Fixed in `slice-reads`: with no call, in `let view = bytes; view[0]`,
+     `have at(statement(0).exit, view[0]) == bytes[0];` was not proved
+     because the recorded-point read of `view[0]` was a 32-bit read
+     (`read<Bits32>`): `slice_expression_type`
+     (`lowering/annotations/declarations.rs`) found no slice type for
+     `view`, which no local of the current state declares, and the read fell
+     back to the placeholder element `int32`. It now takes the type of the
+     value the recorded point's state binds `view` to, so the read is at the
+     slice's element type and the `have` is proved. Test: the
+     `slice_returns::copied` proof of `charon_slice_returns_are_one_slice`.
+
+     Investigated in `slice-reads`, not fixed: why the caller's two reads
+     are not related. The tracker answers `Same` for the cell between the
+     two reads' origins (`resource_tracker::explain` from the read after
+     `view = whole(bytes)` to the function exit), so no step in between
+     writes it; the call to a `views`-only callee is not the barrier
+     (`let v = whole(bytes); let n = v.len(); bytes[0]` is proved). The two
+     reads are named by two naming systems. The program read is made
+     through the call result's fresh data pointer, and the `result` it
+     yields is a read at an unplaced point (`ProgramPoint::unplaced`, no
+     path link) of the store's memory; the legacy snapshot walk
+     (`last_same_version_point`) names it at the function-entry memory, at
+     the argument's address. The claim's read of `bytes[0]` at the outcome
+     is placed and is named at a version point after the call
+     (`ProgramPointId(13)` in the reduction). One unchanged cell thus has
+     two names, which only a cross-state load equality could join, and the
+     kernel does not reconstruct frames for that from facts
+     (`cross_state_load_equality_requires_a_supplied_conclusion`). The
+     classification is a bug in read naming, on the unplaced-point
+     migration (`build_support/read_construction.rs` counts its remaining
+     uses): the read through the call result should be made at the placed
+     point its statement runs at, so both walks name the cell at one
+     version. `let view = whole(bytes); view[0] == bytes[0]` and
+     `ensures result == click::rust::str::as_bytes(s)[0]` for `let bytes =
+     s.as_bytes(); bytes[0]` fail the same way.
 
      Fixed in 3c-ii: the parameter routes of `synthesize_surface_pointer`
      and `synthesize_surface_pointer_offset` named a slice parameter's data
@@ -975,10 +1004,13 @@ construct.
      requires storage with no supported identity"; so is `whole(bytes).len()`
      for a crate `fn`), and `result == click::rust::str::as_bytes(s)[0]` for
      `let bytes = s.as_bytes(); bytes[0]` is not proved (the 3c-i element
-     read limit). The refused index prints its condition as `0u64 <
-     bytes.as_ptr().len()`, a count of the stored slice local raised through
-     its data pointer, which does not lower; it is the same before this
-     step and is not fixed here.
+     read limit). The refused index printed its condition as `0u64 <
+     bytes.as_ptr().len()`, which does not lower: a call's slice result has
+     its data pointer at the variable its count counts, so the diagnostic
+     renderer (`slice_count`, `proof_diagnostics/render/surface.rs`) named
+     the count through the data pointer's label. Fixed in `slice-reads`:
+     the count names the local that holds a slice with that count, `0u64 <
+     bytes.len()`; the test asserts the spelling.
 4. **split_at, iterators, chunks.** Their inputs and the slices they yield
    are wide pointers; their internal fields stay.
 5. **Cleanup and docs.** `docs/reference/rust.md` (byte slices, string

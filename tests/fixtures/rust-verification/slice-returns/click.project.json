@@ -15,7 +15,8 @@
           "slice_returns::measured",
           "slice_returns::same",
           "slice_returns::exclusive",
-          "slice_returns::named"
+          "slice_returns::named",
+          "slice_returns::copied"
         ],
         "files": [
           "returns.rs"
