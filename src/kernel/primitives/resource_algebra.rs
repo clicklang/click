@@ -10677,17 +10677,6 @@ fn exact_resource_fact_entails(
     }
 }
 
-/// Decides one resource-quantity condition by exact routes only.
-///
-/// Exact indexed lookup first, then the retained atomic condition checker on
-/// the bare condition. Neither route recurses through logical structure, tries
-/// alternative rules, nor scans unrelated propositions, so the work is the
-/// condition's own size plus indexed lookups. A quantity relation that only
-/// follows logically is deliberately not decided here: it becomes an explicit
-/// obligation at the operation that consumes it.
-///
-/// The counted-population helpers in `functions.rs` share this routine.
-/// `quantity_relations_ignore_unrelated_facts` is the scaling regression.
 /// Whether `range` is proved to name no cell: its two endpoints are the same
 /// term or proved equal.
 pub(in crate::kernel) fn memory_range_is_proven_empty(
@@ -10702,12 +10691,40 @@ pub(in crate::kernel) fn memory_range_is_proven_empty(
     assumptions.int32_values_known_equal(range.start(), range.end())
 }
 
+/// Compare the two quantity operands as written, including literal pairs.
+pub(in crate::kernel) fn quantity_comparison_holds(
+    assumptions: &PureFactContext,
+    format: MachineIntegerType,
+    relation: CompareRelation,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
+) -> bool {
+    let mut import = KernelTermImport::for_exact_field_inputs();
+    let operands = [left, right].map(|operand| import.machine(format, operand));
+    let root = KernelTerm::boolean_comparison_raw(format, relation, operands);
+    quantity_condition_holds(
+        assumptions,
+        StoredConditionTerm::from_root(root).expect("quantity comparison"),
+    )
+}
+
+/// Decides one resource-quantity condition by exact routes only.
+///
+/// Exact indexed lookup first, then the retained atomic condition checker on
+/// the bare condition. Neither route recurses through logical structure, tries
+/// alternative rules, nor scans unrelated propositions, so the work is the
+/// condition's own size plus indexed lookups. A quantity relation that only
+/// follows logically is deliberately not decided here: it becomes an explicit
+/// obligation at the operation that consumes it.
+///
+/// The counted-population helpers in `functions.rs` share this routine.
+/// `quantity_relations_ignore_unrelated_facts` is the scaling regression.
 pub(in crate::kernel) fn quantity_condition_holds(
     assumptions: &PureFactContext,
-    condition: OldConditionTerm,
+    condition: StoredConditionTerm,
 ) -> bool {
     assumptions.proves_exact(&Proposition::condition_is(condition.clone(), true))
-        || assumptions.decide(&condition) == Some(true)
+        || assumptions.decide(condition.old_form()) == Some(true)
 }
 
 fn resource_quantity_at_least(
@@ -10716,14 +10733,12 @@ fn resource_quantity_at_least(
     assumptions: &PureFactContext,
 ) -> bool {
     available == required
-        || quantity_condition_holds(
+        || quantity_comparison_holds(
             assumptions,
-            OldConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: Box::new(available.clone()),
-                right: Box::new(required.clone()),
-            },
+            MachineIntegerType::Int32,
+            CompareRelation::GreaterEqual,
+            available,
+            required,
         )
 }
 
@@ -10744,14 +10759,12 @@ pub(super) fn resource_quantity_is_positive(
     assumptions: &PureFactContext,
 ) -> bool {
     constant_quantity_is_positive(quantity)
-        || quantity_condition_holds(
+        || quantity_comparison_holds(
             assumptions,
-            OldConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left: Box::new(quantity.clone()),
-                right: Box::new(OldMachineTerm::constant(0)),
-            },
+            MachineIntegerType::Int32,
+            CompareRelation::GreaterThan,
+            quantity,
+            &OldMachineTerm::constant(0),
         )
 }
 
@@ -11026,14 +11039,12 @@ fn consume_exact_resource_fact(
             required_quantity.old_form().clone(),
         );
         let residual_is_zero = residual.as_const() == Some(0)
-            || quantity_condition_holds(
+            || quantity_comparison_holds(
                 assumptions,
-                OldConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(residual.clone()),
-                    right: Box::new(OldMachineTerm::constant(0)),
-                },
+                MachineIntegerType::Int32,
+                CompareRelation::Equal,
+                &residual,
+                &OldMachineTerm::constant(0),
             );
         ResourceFactConsumption::Replace(if residual_is_zero {
             Vec::new()

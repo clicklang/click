@@ -29,14 +29,12 @@ fn same_quantity(
     assumptions: &PureFactContext,
 ) -> bool {
     left == right
-        || crate::kernel::quantity_condition_holds(
+        || crate::kernel::quantity_comparison_holds(
             assumptions,
-            crate::kernel::OldConditionTerm::Compare {
-                format: crate::kernel::MachineIntegerType::Int32,
-                relation: crate::kernel::CompareRelation::Equal,
-                left: Box::new(left.clone()),
-                right: Box::new(right.clone()),
-            },
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::CompareRelation::Equal,
+            left,
+            right,
         )
 }
 
@@ -2295,9 +2293,9 @@ impl CreationEvents {
         }
         if !crate::kernel::quantity_condition_holds(
             assumptions,
-            crate::kernel::OldConditionTerm::signed_greater_equal(
-                quantity.clone(),
-                OldMachineTerm::constant(0),
+            crate::kernel::StoredConditionTerm::signed_int32_at_least(
+                quantity,
+                &OldMachineTerm::constant(0),
             ),
         ) {
             return Err(CreationRefusal::InvalidQuantity);
@@ -2335,10 +2333,7 @@ impl CreationEvents {
                 let maximum = OldMachineTerm::constant(i32::MAX as u32 - base);
                 if !crate::kernel::quantity_condition_holds(
                     assumptions,
-                    crate::kernel::OldConditionTerm::signed_greater_equal(
-                        maximum,
-                        quantity.clone(),
-                    ),
+                    crate::kernel::StoredConditionTerm::signed_int32_at_least(&maximum, quantity),
                 ) {
                     return Err(CreationRefusal::InvalidQuantity);
                 }

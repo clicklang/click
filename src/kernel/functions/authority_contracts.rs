@@ -1129,7 +1129,7 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                 )
             }
         };
-        let quantity = Box::new(quantity.old_form().clone());
+        let quantity = quantity.old_form();
         // A declared consumption under an authority this proof holds is a
         // death the caller applies, so the body must have recorded it with a
         // checked spend. Otherwise a returned control could state its counter
@@ -1155,14 +1155,12 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
         }
         let zero = |term: &OldMachineTerm| {
             term.as_const() == Some(0)
-                || crate::kernel::quantity_condition_holds(
+                || crate::kernel::quantity_comparison_holds(
                     assumptions,
-                    OldConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(term.clone()),
-                        right: Box::new(OldMachineTerm::constant(0)),
-                    },
+                    MachineIntegerType::Int32,
+                    CompareRelation::Equal,
+                    term,
+                    &OldMachineTerm::constant(0),
                 )
         };
         let delta = exit
@@ -1170,18 +1168,16 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
             .creation
             .as_ref()
             .and_then(|events| events.imported_member_delta_since_entry(&description));
-        let consumed = (zero(&quantity) && delta.as_ref().is_none_or(|(_, actual)| zero(actual)))
+        let consumed = (zero(quantity) && delta.as_ref().is_none_or(|(_, actual)| zero(actual)))
             || delta.is_some_and(|(produce, actual_quantity)| {
                 !produce
                     && (actual_quantity == *quantity
-                        || crate::kernel::quantity_condition_holds(
+                        || crate::kernel::quantity_comparison_holds(
                             assumptions,
-                            OldConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
-                                relation: CompareRelation::Equal,
-                                left: Box::new(actual_quantity),
-                                right: quantity.clone(),
-                            },
+                            MachineIntegerType::Int32,
+                            CompareRelation::Equal,
+                            &actual_quantity,
+                            quantity,
                         ))
             });
         if !consumed {
@@ -1293,19 +1289,17 @@ pub(super) fn check_quantity_exchange_at_return(
                             Box::new(actual),
                         )
                     };
-                    crate::kernel::quantity_condition_holds(
+                    crate::kernel::quantity_comparison_holds(
                         assumptions,
-                        OldConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::Equal,
-                            left: Box::new(actual),
-                            right: Box::new(binary_node!(
-                                Int32,
-                                Subtract,
-                                Box::new(produced.old_form().clone()),
-                                Box::new(consumed.old_form().clone()),
-                            )),
-                        },
+                        MachineIntegerType::Int32,
+                        CompareRelation::Equal,
+                        &actual,
+                        &binary_node!(
+                            Int32,
+                            Subtract,
+                            Box::new(produced.old_form().clone()),
+                            Box::new(consumed.old_form().clone()),
+                        ),
                     )
                 })
         }
