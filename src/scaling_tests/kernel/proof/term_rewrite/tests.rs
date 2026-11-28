@@ -1453,6 +1453,51 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
 }
 
 #[test]
+fn machine_conversions_collect_shared_integers_and_numeric_addresses() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let integer = Variable(982808);
+        let base = Variable(982809);
+        let mut sum = KernelTerm::variable(KernelType::Integer, integer);
+        for _ in 0..depth {
+            sum = KernelTerm::integer_operation(KernelIntegerOperator::Add, vec![sum.clone(), sum])
+                .unwrap();
+        }
+        let format = MachineIntegerType::UInt64;
+        let cast = KernelTerm::integer_to_machine(format, sum).unwrap();
+        let address = Address::symbolic(base);
+        let numeric = KernelTerm::shared_pointer_address_observation(
+            format,
+            address.shared().clone(),
+            AddressObjectClass::NONE,
+        );
+        let machine = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Add,
+            [cast.clone(), numeric.clone()],
+        );
+        let mut variables = CarrierVariables::for_rewrite(true);
+        collect_machine_operand_carriers(MachineOperandView::Shared(&machine), &mut variables);
+        assert_eq!(variables.integer, BTreeSet::from([integer]));
+        assert_eq!(variables.program_values, BTreeSet::from([base]));
+        assert!(!variables.exhausted());
+        assert!(
+            variables.nodes <= depth + 32,
+            "depth {depth}, visits {}",
+            variables.nodes
+        );
+        let mut occurrences = CarrierVariables {
+            pointer_terms: Some(Vec::new()),
+            ..Default::default()
+        };
+        collect_machine_operand_carriers(MachineOperandView::Shared(&machine), &mut occurrences);
+        assert_eq!(occurrences.pointer_terms.unwrap(), [address]);
+        assert!(!cast.has_cached_machine_leaf());
+        assert!(!numeric.has_cached_machine_leaf());
+    }
+}
+
+#[test]
 fn machine_conditional_carriers_visit_each_shared_guard_node_once() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
