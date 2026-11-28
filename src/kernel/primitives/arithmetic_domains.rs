@@ -119,17 +119,9 @@ impl Proposition {
         {
             return Self::condition_is(StoredConditionTerm::constant(true), true);
         }
-        let (minimum, maximum) = format.format().bounds();
-        Self::And(
-            Box::new(Self::condition_is(
-                OldConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
-                true,
-            )),
-            Box::new(Self::condition_is(
-                OldConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
-                true,
-            )),
-        )
+        let [upper, lower] =
+            crate::kernel::machine_integer::definedness::ordinary_bounds(format, exact);
+        Self::And(Box::new(upper), Box::new(lower))
     }
 
     pub(crate) fn signed_arithmetic_domain(
@@ -397,6 +389,17 @@ mod construction_tests {
                     .unwrap();
             let range = Proposition::arithmetic_result_range(destination, value);
             assert_eq!(range.literal_condition() == Some((true, true)), fits);
+            if !fits {
+                let Proposition::And(upper, lower) = range else {
+                    panic!("expected both range bounds");
+                };
+                for bound in [upper, lower] {
+                    let Proposition::ConditionIs(condition, true) = *bound else {
+                        panic!("expected an asserted Integer comparison");
+                    };
+                    assert!(!condition.root().unwrap().has_cached_native_argument());
+                }
+            }
         }
     }
 }

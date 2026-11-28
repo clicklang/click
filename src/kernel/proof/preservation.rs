@@ -2,7 +2,7 @@
 //! No history, read reconstruction, or premise discovery belongs here.
 use crate::kernel::eval::typed_reads::{self, ReadType};
 use crate::kernel::prelude::*;
-use crate::kernel::{KernelTerm, KernelTermImport, StoredConditionTerm};
+use crate::kernel::{IntegerComparisonOperator, KernelTerm, KernelTermImport, StoredConditionTerm};
 
 pub(crate) fn apply(
     separation: &Proposition,
@@ -266,7 +266,11 @@ fn preserve_field(
     if let Some(a) = after.fields().integer_term(field.index) {
         let b = before.fields().integer_term(field.index)?;
         return Some(Proposition::condition_is(
-            StoredConditionTerm::integer_equal(a.into_shared(), b.into_shared()),
+            StoredConditionTerm::integer_comparison(
+                IntegerComparisonOperator::Equal,
+                a.into_shared(),
+                b.into_shared(),
+            ),
             true,
         ));
     }
@@ -446,7 +450,8 @@ fn integer_equality(
             StoredConditionTerm::logical_word64_equality(format, left, right, false)
         }
         MachineIntegerType::Int128 | MachineIntegerType::UInt128 => {
-            StoredConditionTerm::integer_equal(
+            StoredConditionTerm::integer_comparison(
+                IntegerComparisonOperator::Equal,
                 IntegerTerm::from_machine(format, left)?.into(),
                 IntegerTerm::from_machine(format, right)?.into(),
             )
