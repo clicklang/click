@@ -598,7 +598,7 @@ mod tests {
         let variable = crate::kernel::program_expression::variable("wide");
         assert_eq!(
             convert(variable.clone(), ScalarKind::UInt64, ScalarKind::Int64),
-            kernel::program_expression::integer_cast_modulo(variable, ProgramType::Int64)
+            kernel::program_expression::uint64_bits_to_int64(variable)
         );
     }
 }
