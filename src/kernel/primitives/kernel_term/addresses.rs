@@ -389,6 +389,16 @@ impl Hash for SharedAddress {
 }
 
 impl SharedAddress {
+    pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&OldMachineTerm> {
+        if matches!(self.offset().node(), KernelAddressOffset::Constant(0))
+            && let AddressBase::PureFunctionApplication(application) = self.atom()
+        {
+            application.integer_address_bits()
+        } else {
+            None
+        }
+    }
+
     fn from_parts(identity: BlockIdentity, base: AddressBase, offset: AddressOffset) -> Self {
         Self(Arc::new(SharedAddressData {
             parts: AddressParts {

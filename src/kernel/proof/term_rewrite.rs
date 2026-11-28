@@ -6749,8 +6749,17 @@ impl<'a> TermRewrite<'a> {
     ) -> Proposition {
         let root = match left.equality_kind(&right) {
             PointerEqualityKind::IntegerAddress => {
-                let reduced = OldConditionTerm::integer_address_equality(&left, &right);
-                return self.finish_condition(reduced).truth_claim(truth);
+                // Proof queries consume written order guards and graph operands.
+                if self.collected_conditions.is_some() || self.equality_graph.is_some() {
+                    let reduced = OldConditionTerm::integer_address_equality(&left, &right);
+                    return self.finish_condition(reduced).truth_claim(truth);
+                }
+                // Equality is filed at Int64 regardless of the word's signedness.
+                // Keep registered read names as written in this result.
+                KernelTermImport::for_exact_field_inputs().integer_address_equality(
+                    MachineIntegerType::Int64,
+                    [left.address().shared(), right.address().shared()],
+                )
             }
             PointerEqualityKind::Address => {
                 let (a, b) = (left.address(), right.address());
@@ -9061,6 +9070,57 @@ mod tests {
         ));
         assert_eq!(pointers(call), [address.clone(), address.clone()]);
         assert_eq!(pointers(nested), [address.clone(), address]);
+    }
+
+    #[test]
+    fn pointer_integer_equality_retains_written_words_and_folds_constants() {
+        let _session = VerificationSession::enter();
+        let base = Address::symbolic(Variable(99833));
+        let read = crate::kernel::eval::load_variable_for_exact_cell(
+            &crate::kernel::intern_memory(SymbolicMemory::new()),
+            &base,
+            LoadKind::Bits64,
+            8,
+        );
+        let pointer = Pointer::new(base, ProgramType::Int32Pointer);
+        let cast = |word| {
+            pointer
+                .clone()
+                .with_address(Address::from_integer_address(word))
+        };
+        let left = cast(OldMachineTerm::Variable(read));
+        for (a, b) in [
+            (&left, &pointer),
+            (&left, &left),
+            (
+                &cast(OldMachineTerm::int64_constant(-1)),
+                &cast(OldMachineTerm::uint64_constant(u64::MAX)),
+            ),
+            (
+                &cast(OldMachineTerm::uint64_constant(5)),
+                &cast(OldMachineTerm::uint64_constant(6)),
+            ),
+        ] {
+            let written = OldConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone()));
+            let expected = TermRewrite::empty().condition(&written);
+            let source = KernelTerm::pointer_equal_raw([a.shared().clone(), b.shared().clone()]);
+            for truth in [false, true] {
+                let goal = Proposition::condition_is(
+                    StoredConditionTerm::from_root(source.clone()).unwrap(),
+                    truth,
+                );
+                let Proposition::ConditionIs(result, polarity) =
+                    TermRewrite::empty().proposition(&goal)
+                else {
+                    panic!("expected a condition claim")
+                };
+                assert_eq!(polarity, truth);
+                let root = result.root().expect("shared integer-address comparison");
+                assert!(!root.has_cached_native_argument());
+                assert_eq!(KernelTermExport::condition(root).unwrap(), expected);
+                assert!(!source.has_cached_native_argument());
+            }
+        }
     }
 
     #[test]

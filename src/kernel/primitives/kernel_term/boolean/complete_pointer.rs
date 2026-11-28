@@ -198,37 +198,12 @@ impl KernelTerm {
             || (matches!(a.program_type, ProgramType::FunctionPointer(_))
                 && matches!(b.program_type, ProgramType::FunctionPointer(_)))
         {
-            fn bits(address: &SharedAddress) -> Option<&OldMachineTerm> {
-                if matches!(address.offset().node(), KernelAddressOffset::Constant(0))
-                    && let AddressBase::PureFunctionApplication(call) = address.atom()
-                {
-                    call.integer_address_bits()
-                } else {
-                    None
-                }
-            }
-            if bits(&a.address).is_some() || bits(&b.address).is_some() {
-                let numeric = |address: &SharedAddress| {
-                    if let Some(bits) = bits(address) {
-                        return KernelTermImport::default()
-                            .machine(MachineIntegerType::UInt64, bits);
-                    }
-                    if address.syntax_equal(&Address::null().shared().clone()) {
-                        return KernelTermImport::default().machine(
-                            MachineIntegerType::UInt64,
-                            &OldMachineTerm::uint64_constant(0),
-                        );
-                    }
-                    Self::shared_pointer_address_observation(
-                        MachineIntegerType::UInt64,
-                        address.clone(),
-                        AddressObjectClass::NONE,
-                    )
-                };
-                return Self::boolean_comparison(
+            if a.address.integer_address_bits().is_some()
+                || b.address.integer_address_bits().is_some()
+            {
+                return KernelTermImport::default().integer_address_equality(
                     MachineIntegerType::UInt64,
-                    CompareRelation::Equal,
-                    [numeric(&a.address), numeric(&b.address)],
+                    [&a.address, &b.address],
                 );
             }
             return Self::address_equal([a.address.clone(), b.address.clone()]);
@@ -237,6 +212,29 @@ impl KernelTerm {
             let p = value.node();
             value.with_binding_type(p.program_type)
         }))
+    }
+}
+
+impl KernelTermImport {
+    pub(crate) fn integer_address_equality(
+        &mut self,
+        format: MachineIntegerType,
+        addresses: [&SharedAddress; 2],
+    ) -> KernelTerm {
+        let words = addresses.map(|address| {
+            if let Some(bits) = address.integer_address_bits() {
+                self.machine(format, bits)
+            } else if address.syntax_equal(Address::null().shared()) {
+                self.machine(format, &OldMachineTerm::uint64_constant(0))
+            } else {
+                KernelTerm::shared_pointer_address_observation(
+                    format,
+                    address.clone(),
+                    AddressObjectClass::NONE,
+                )
+            }
+        });
+        KernelTerm::boolean_comparison(format, CompareRelation::Equal, words)
     }
 }
 

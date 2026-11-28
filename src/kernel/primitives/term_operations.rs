@@ -4643,13 +4643,7 @@ impl Pointer {
 
 impl Address {
     pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&OldMachineTerm> {
-        if matches!(self.offset.view(), OffsetView::Constant(0))
-            && let AddressBase::PureFunctionApplication(application) = &self.base
-        {
-            application.integer_address_bits()
-        } else {
-            None
-        }
+        self.shared().integer_address_bits()
     }
 
     /// The raw base address from which this pointer's object provenance came.
