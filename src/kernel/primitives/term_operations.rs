@@ -8,6 +8,114 @@ use crate::kernel::{
     native_constant, uint64_constant,
 };
 
+enum Word64Equality {
+    Constant(bool),
+    Null(Box<Address>),
+    Words(Box<OldMachineTerm>, Box<OldMachineTerm>),
+}
+
+fn written_alignment(masked: MachineOperandView<'_>) -> Option<(&Address, u64)> {
+    use MachineOperandView as V;
+    masked.pointer_alignment(|word| {
+        let native = match word {
+            V::Old(native) => native,
+            V::Shared(root) => root.machine_conversion_leaf()?,
+        };
+        match native {
+            OldMachineTerm::IntegerAddress(pointer, _) => Some(pointer.as_ref()),
+            _ => None,
+        }
+    })
+}
+
+fn word64_alignment<'a>(
+    left: &'a OldMachineTerm,
+    right: &'a OldMachineTerm,
+) -> Option<(&'a Address, u64)> {
+    let masked = if right.bitvector64_as_const() == Some(0) {
+        left
+    } else if left.bitvector64_as_const() == Some(0) {
+        right
+    } else {
+        return None;
+    };
+    written_alignment(MachineOperandView::Old(masked))
+}
+
+fn distinct_word64_equality(left: OldMachineTerm, right: OldMachineTerm) -> Word64Equality {
+    if let (OldMachineTerm::IntegerAddress(pointer, _), other)
+    | (other, OldMachineTerm::IntegerAddress(pointer, _)) = (&left, &right)
+        && other.uint64_as_const() == Some(0)
+    {
+        return Word64Equality::Null(pointer.clone());
+    }
+    if let (Some(a), Some(b)) = (left.bitvector64_as_const(), right.bitvector64_as_const()) {
+        return Word64Equality::Constant(a == b);
+    }
+    let words = match word64_alignment(&left, &right) {
+        Some((address, alignment)) => alignment_words(address, alignment),
+        None => [left, right],
+    };
+    let [left, right] = words.map(Box::new);
+    Word64Equality::Words(left, right)
+}
+
+// Alignment names the low address bits independently of the object's class.
+fn alignment_words(pointer: &Address, alignment: u64) -> [OldMachineTerm; 2] {
+    [
+        OldMachineTerm::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseAnd,
+            left: Box::new(OldMachineTerm::IntegerAddress(
+                Box::new(pointer.clone()),
+                AddressObjectClass::NONE,
+            )),
+            right: Box::new(OldMachineTerm::uint64_constant(alignment - 1)),
+        },
+        OldMachineTerm::uint64_constant(0),
+    ]
+}
+
+impl StoredConditionTerm {
+    /// Logical lowering retains reflexive and bounded comparisons as written.
+    /// Other word equalities use the same reductions as the native checker.
+    pub(crate) fn logical_word64_equality(
+        format: MachineIntegerType,
+        left: OldMachineTerm,
+        right: OldMachineTerm,
+    ) -> Self {
+        use crate::kernel::machine_integer::comparison::retained_comparison_operands;
+        debug_assert_eq!(format.format().bits(), 64);
+        let views = [
+            MachineOperandView::Old(&left),
+            MachineOperandView::Old(&right),
+        ];
+        let words = if let Some(words) = retained_comparison_operands(format, views, false) {
+            words
+        } else if left == right {
+            [left, right]
+        } else {
+            match distinct_word64_equality(left, right) {
+                Word64Equality::Constant(value) => return Self::constant(value),
+                Word64Equality::Null(address) => {
+                    return Self::address_equal(&address, &Address::null());
+                }
+                Word64Equality::Words(left, right) => [*left, *right],
+            }
+        };
+        // Equality of 64-bit patterns is filed at Int64 for both signednesses.
+        let format = MachineIntegerType::Int64;
+        let mut import = KernelTermImport::for_exact_field_inputs();
+        let args = words.each_ref().map(|word| import.machine(format, word));
+        Self::from_root(KernelTerm::boolean_comparison_raw(
+            format,
+            CompareRelation::Equal,
+            args,
+        ))
+        .expect("64-bit word equality")
+    }
+}
+
 // Operands here have already undergone the language's scalar promotions.
 // Keep both constant-folding entry points on the shared format semantics.
 fn checked_machine_div_rem_const(
@@ -3216,7 +3324,6 @@ impl OldConditionTerm {
     /// Recognizes the alignment shape in either operand order and with any
     /// constant spelling of the mask and the zero.
     pub(crate) fn as_pointer_alignment(&self) -> Option<(&Address, u64)> {
-        use crate::kernel::MachineOperandView as V;
         let masked = match self {
             Self::Compare {
                 format: MachineIntegerType::Int64,
@@ -3224,13 +3331,7 @@ impl OldConditionTerm {
                 left,
                 right,
             } => {
-                if right.bitvector64_as_const() == Some(0) {
-                    V::Old(left)
-                } else if left.bitvector64_as_const() == Some(0) {
-                    V::Old(right)
-                } else {
-                    return None;
-                }
+                return word64_alignment(left, right);
             }
             Self::IntegerEqual(left, right) => {
                 let word = if right.as_const().is_some_and(|n| n == &0.into()) {
@@ -3250,60 +3351,22 @@ impl OldConditionTerm {
             }
             _ => return None,
         };
-        masked.pointer_alignment(|word| {
-            let native = match word {
-                V::Old(native) => native,
-                V::Shared(root) => root.machine_conversion_leaf()?,
-            };
-            match native {
-                OldMachineTerm::IntegerAddress(pointer, _) => Some(pointer.as_ref()),
-                _ => None,
-            }
-        })
+        written_alignment(masked)
     }
 
     pub(crate) fn int64_equal(left: OldMachineTerm, right: OldMachineTerm) -> Self {
         if left == right {
             return Self::Constant(true);
         }
-        // An address is zero exactly when its pointer is null. Two addresses
-        // stay an address equality: equal addresses are not equal pointers.
-        if let (OldMachineTerm::IntegerAddress(pointer, _), other)
-        | (other, OldMachineTerm::IntegerAddress(pointer, _)) = (&left, &right)
-            && other.uint64_as_const() == Some(0)
-        {
-            return Self::address_equal(pointer.as_ref().clone(), Address::null());
-        }
-        match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
-            (Some(left), Some(right)) => Self::Constant(left == right),
-            _ => {
-                let condition = Self::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                };
-                // Alignment describes address bits, independently of the
-                // object's class. Give C masks and `aligned` one canonical
-                // proposition while leaving pointer-producing words intact.
-                if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
-                    return Self::Compare {
-                        format: MachineIntegerType::Int64,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(OldMachineTerm::Binary {
-                            format: MachineIntegerType::UInt64,
-                            op: MachineBinaryOp::BitwiseAnd,
-                            left: Box::new(OldMachineTerm::IntegerAddress(
-                                Box::new(pointer.clone()),
-                                crate::kernel::AddressObjectClass::NONE,
-                            )),
-                            right: Box::new(OldMachineTerm::uint64_constant(alignment - 1)),
-                        }),
-                        right: Box::new(OldMachineTerm::uint64_constant(0)),
-                    };
-                }
-                condition
-            }
+        match distinct_word64_equality(left, right) {
+            Word64Equality::Constant(value) => Self::Constant(value),
+            Word64Equality::Null(address) => Self::address_equal(*address, Address::null()),
+            Word64Equality::Words(left, right) => Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
         }
     }
 

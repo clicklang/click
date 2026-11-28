@@ -256,6 +256,61 @@ mod tests {
     }
 
     #[test]
+    fn stored_logical_word64_equality_matches_written_lowering() {
+        use crate::kernel::machine_integer::comparison::logical_condition_for_operand_views;
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = OldMachineTerm::IntegerAddress(
+            Box::new(Address::symbolic(Variable(971_105))),
+            AddressObjectClass::NONE,
+        );
+        let binary = |op, left, right| OldMachineTerm::Binary {
+            format: MachineIntegerType::UInt64,
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+        let values = [
+            OldMachineTerm::Variable(Variable(971_106)),
+            OldMachineTerm::int64_constant(-1),
+            OldMachineTerm::uint64_constant(0),
+            binary(
+                MachineBinaryOp::Add,
+                OldMachineTerm::uint64_constant(1),
+                OldMachineTerm::uint64_constant(2),
+            ),
+            binary(
+                MachineBinaryOp::BitwiseAnd,
+                OldMachineTerm::uint64_constant(7),
+                address.clone(),
+            ),
+            address,
+        ];
+        for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            for left in &values {
+                for right in &values {
+                    let expected = logical_condition_for_operand_views(
+                        format,
+                        CompareRelation::Equal,
+                        [
+                            MachineOperandView::Old(left),
+                            MachineOperandView::Old(right),
+                        ],
+                    );
+                    let stored = StoredConditionTerm::logical_word64_equality(
+                        format,
+                        left.clone(),
+                        right.clone(),
+                    );
+                    let root = stored.root().unwrap();
+                    assert!(!root.has_cached_native_argument());
+                    let actual = KernelTermExport::condition(root).unwrap();
+                    assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+                }
+            }
+        }
+    }
+
+    #[test]
     fn retained_comparison_constructors_preserve_address_and_mask_rules() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = OldMachineTerm::IntegerAddress(
