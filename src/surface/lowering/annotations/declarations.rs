@@ -187,7 +187,14 @@ impl Declarations<'_> {
         name: impl Into<crate::kernel::BindingName>,
         typing: &TypingEnvironment<'_>,
     ) -> Option<ProgramType> {
-        let name = self.source_binding(name.into());
+        let name = name.into();
+        // Where C names resolve through the bindings in scope, a binder the
+        // clause declares hides the C declaration of the same spelling, as a
+        // proof clause's free C names resolve and its bound ones do not.
+        if self.source_bindings.is_some() && typing.declares(&name) {
+            return None;
+        }
+        let name = self.source_binding(name);
         if name == crate::kernel::CONTRACT_RESULT {
             return Some(self.result_type);
         }
@@ -198,7 +205,7 @@ impl Declarations<'_> {
                 .map(|ty| ty.to_kernel_type());
         }
         if name.unresolved_name().is_none() {
-            return name.program_type();
+            return declared_value_type(&name);
         }
         if typing.binding_is_algebraic(&name) {
             return None;
@@ -219,6 +226,13 @@ impl Declarations<'_> {
                         // A name bound to a value in this context: a fixed state's
                         // local, including one that keeps an enum in memory.
                         .or_else(|| typing.bound_enum_value_type(&name))
+                        // A global array names its first element.
+                        .or_else(|| {
+                            self.global_declarations
+                                .as_ref()?
+                                .array_element_type(&name)?
+                                .pointer_to()
+                        })
                 })
         }
     }
@@ -382,5 +396,26 @@ impl Declarations<'_> {
                 crate::languages::interface::GlobalDeclarations::array_element_type,
             ),
         }
+    }
+}
+
+/// The type the C declaration `name` resolves to has as a value in an
+/// expression: an array names a pointer to its first element, and a struct
+/// value has no scalar value.
+fn declared_value_type(name: &crate::kernel::BindingName) -> Option<ProgramType> {
+    let ty = name.program_type()?;
+    if ty.is_pointer() {
+        return Some(ty);
+    }
+    let struct_name = name
+        .local_id()
+        .and_then(|id| id.struct_name())
+        .or_else(|| name.static_id().and_then(|id| id.struct_name()));
+    if struct_name.is_some() {
+        return None;
+    }
+    match ty.array_element_type() {
+        Some(element) => element.pointer_to(),
+        None => Some(ty),
     }
 }
