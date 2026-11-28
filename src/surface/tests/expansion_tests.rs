@@ -25334,11 +25334,13 @@ fn replacement_with_children_preserves_pointer_values_across_stores() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let expanded =
-        expand_c_claim_source_by_label(&source, &sources, "replace_node_with_children.contract")
-            .expect("the source pointer values must remain framed across the helper stores");
-    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
-        .expect("the original replacement must cold verify after expansion");
+    let claim = "replace_node_with_children.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .expect("the source pointer values must remain framed across the helper stores");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the original replacement must cold verify after expansion");
     let wrong_identity = source.replacen(
         "ensures u.model == rb_substitute(old(t.model), new_node);",
         "ensures u.model == rb_substitute(old(t.model), victim);",
