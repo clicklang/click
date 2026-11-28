@@ -48,5 +48,5 @@ int caller(const Square& square, int scale) {
 ```
 
 ```expect
-fail: Square::area.interface_ensures_0
+fail: inherited ensures clause from `Shape::area`
 ```

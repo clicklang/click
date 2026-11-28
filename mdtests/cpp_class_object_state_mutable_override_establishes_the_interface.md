@@ -47,5 +47,5 @@ int caller(Square& square, int half) {
 ```
 
 ```expect
-fail: Square::set.interface_ensures_0
+fail: inherited ensures clause from `Shape::set`
 ```

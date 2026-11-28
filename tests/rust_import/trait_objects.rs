@@ -61,7 +61,7 @@ fn rust_trait_implementations_use_an_imported_object_model() {
     let invalid = sidecar.replace("self.radius + self.radius", "self.radius");
     let error = verify(&invalid).expect_err("the implementation must prove the imported guarantee");
     let report = click::languages::rust::names::display_rust_names(&error.report()).into_owned();
-    assert!(report.contains("::area.interface_ensures_0"), "{report}");
+    assert!(report.contains("::area.contract"), "{report}");
 }
 
 // A trait's `function`s are its object's state. An interface reads them of
@@ -86,7 +86,7 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
         (
             "function size(self) -> i32 { self.radius + self.radius }",
             "function size(self) -> i32 { self.radius }",
-            "`<trait_objects::Circle as trait_objects::Shape>::area.interface_ensures_0`",
+            "`<trait_objects::Circle as trait_objects::Shape>::area.contract`",
         ),
         // An implementation that refuses a call the interface allows.
         (
@@ -117,7 +117,7 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
         (
             "        ensures size(self) == half + half;",
             "        ensures size(self) == half;",
-            "::set.interface_ensures_0",
+            "::set.contract",
         ),
         // A caller of the default method can use only its declared guarantee.
         // Weakening that guarantee leaves the caller's result unproved.
@@ -279,7 +279,7 @@ fn charon_trait_functions_are_defined_from_a_held_resource() {
             "fn put(&mut self, x: u32) {",
             "function item(self) -> Option<u32> { state.value }",
             "function item(self) -> Option<u32> { Option<u32>::None }",
-            "`<resource_state::Slot as resource_state::Store<u32>>::put.interface_ensures_0`",
+            "`<resource_state::Slot as resource_state::Store<u32>>::put.contract`",
         ),
         // A caller knows what the interface says of the value it lent.
         (

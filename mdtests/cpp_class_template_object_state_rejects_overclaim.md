@@ -41,5 +41,5 @@ void store(Holder<int>& holder, int x) {
 ```
 
 ```expect
-fail: failed for `Wrap<T>::put.interface_ensures_0`
+fail: inherited ensures clause from `Holder<T>::put`
 ```

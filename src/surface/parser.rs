@@ -847,6 +847,7 @@ pub(super) enum Token {
     /// Frontend-only marker for a C++ method’s virtual interface.
     CppVirtualInterface,
     OverrideContract,
+    RefinementClaim(std::sync::Arc<RefinementClaimOrigin>),
     ReferenceBindingContract(std::sync::Arc<crate::kernel::ReferenceBindingContract>),
     Ident(String),
     Number(u32),
@@ -958,6 +959,7 @@ impl Token {
             Self::RustSharedReferenceLoan(_) => "Rust shared reference loan",
             Self::CppVirtualInterface => "virtual method interface",
             Self::OverrideContract => "implementation interface",
+            Self::RefinementClaim(_) => "inherited contract clause",
             Self::ReferenceBindingContract(_) => "reference binding contract",
             Self::LBrace => "{",
             Self::RBrace => "}",
@@ -5179,6 +5181,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -5225,6 +5228,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -5863,6 +5867,7 @@ impl Parser {
                         ensures.push(
                             apply_contract_lets_to_ensure_clause(
                                 EnsureClause {
+                                    refinement: None,
                                     proof_bindings: Vec::new(),
                                     name: None,
                                     ensure: Ensure::Resource(resource),
@@ -5958,6 +5963,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -6081,6 +6087,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -6125,6 +6132,7 @@ impl Parser {
                             ensures.push(
                                 apply_contract_lets_to_ensure_clause(
                                     EnsureClause {
+                                        refinement: None,
                                         proof_bindings: Vec::new(),
                                         name: None,
                                         ensure: Ensure::Resource(resource),
@@ -6167,6 +6175,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -6201,7 +6210,11 @@ impl Parser {
                         }
                     }
                     ensure_kinds.push(ClaimClauseKind::Ensures);
-                    clause_positions.push(clause_start.clone());
+                    clause_positions.push(if ensure.refinement.is_some() {
+                        None
+                    } else {
+                        clause_start.clone()
+                    });
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(ensure, &contract_lets)
                             .map_err(|message| self.error(message))?,
@@ -9575,6 +9588,13 @@ impl Parser {
         &mut self,
         execution_names: Option<&BTreeSet<String>>,
     ) -> Result<(EnsureClause, Vec<(String, String)>), ClickError> {
+        let refinement = match self.peek().cloned() {
+            Some(Token::RefinementClaim(origin)) => {
+                self.position += 1;
+                Some(origin)
+            }
+            _ => None,
+        };
         let name = if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_next() == Some(&Token::Colon)
         {
@@ -9606,6 +9626,7 @@ impl Parser {
 
         Ok((
             EnsureClause {
+                refinement,
                 proof_bindings: Vec::new(),
                 name,
                 ensure,
@@ -19226,6 +19247,7 @@ fn expand_aggregate_requirement(requirement: Requirement) -> Vec<Requirement> {
 
 fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
     let EnsureClause {
+        refinement,
         proof_bindings,
         name,
         ensure,
@@ -19238,6 +19260,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
         Ensure::Resource(resource) => expand_aggregate_resource_clause(resource)
             .into_iter()
             .map(|resource| EnsureClause {
+                refinement: refinement.clone(),
                 proof_bindings: proof_bindings.clone(),
                 name: name.clone(),
                 ensure: Ensure::Resource(resource),
@@ -19248,6 +19271,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
             })
             .collect(),
         ensure => vec![EnsureClause {
+            refinement,
             proof_bindings,
             name,
             ensure,

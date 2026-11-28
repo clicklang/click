@@ -1857,7 +1857,7 @@ selects. Declare a pure virtual method's contract in an imported
 Each override inherits the interface of the method it overrides, as a Rust
 trait implementation does
 ([Rust reference](../rust.md#trait-method-interfaces)): the interface's
-`ensures` join its own, labeled `Square::area.interface_ensures_0`, and its
+`ensures` join its own in the `Square::area.contract` proof, and its
 proof establishes them; an override that writes no `requires` takes the
 interface's, and written ones must follow from the interface's, each clause
 read exactly or decided as a bare comparison. The inherited clauses are read
@@ -1955,8 +1955,8 @@ new and `old(size(this))` as at entry
 *this`, so a caller of it keeps every field of the object, not only the
 definitions (`mdtests/cpp_class_const_method_keeps_fields.md`,
 `mdtests/cpp_class_const_method_keeps_fields_rejects_overclaim.md`). An override of a `Shape` method
-inherits that method's clauses read the same way, labeled
-`Square::area.interface_ensures_0`. Click checks refinement against the
+proves that method's clauses on its own memory in
+the `Square::area.contract` proof. Click checks refinement against the
 interface translated to `Square::area`'s concrete memory.
 
 A call that binds a `Square` to a `Shape&` transfers its memory to the abstract
@@ -2088,7 +2088,7 @@ int BigSquare::area(int scale) const {
 ```
 
 Each of its overrides keeps the object class's interface read with its own
-definitions, labeled `BigSquare::area.interface_ensures_0`. Click checks
+definitions, in the `BigSquare::area.contract` proof. Click checks
 refinement against the object class's interface translated through those
 definitions
 (`mdtests/cpp_class_subclass_override_rejects_overclaim.md`). A reference to

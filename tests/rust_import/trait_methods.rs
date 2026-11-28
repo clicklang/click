@@ -38,7 +38,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
                 "        ensures scale < result and result <= 3001;\n    }\n}",
                 "        ensures scale < result and result <= 2000;\n    }\n}",
             )][..],
-            "`<trait_methods::Square as trait_methods::Shape>::area.interface_ensures_0`",
+            "inherited ensures clause from `trait_methods::Shape::area`",
         ),
         // An implementation that refuses a call the interface allows.
         (

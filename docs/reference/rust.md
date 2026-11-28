@@ -674,9 +674,8 @@ Each implementation is written in an `impl` block naming the trait and the
 type by their paths, `impl trait_methods::Shape for trait_methods::Square
 { fn area(&self, scale: i32) -> i32 { ... } by { ... } }`, and verified as
 any method is. It inherits the interface: the interface's `ensures` join its
-own, labeled `<trait_methods::Circle as
-trait_methods::Shape>::area.interface_ensures_0`, and its proof establishes
-them all; an implementation that writes no `requires` takes the
+own in the `<trait_methods::Circle as trait_methods::Shape>::area.contract`
+proof; an implementation that writes no `requires` takes the
 interface's. The inherited clauses are read with the implementation's own
 names for its parameters: `Square`'s `area` names `scale` as `factor`. It may accept more calls than the
 interface, a wider precondition, and its `requires` are checked to follow
@@ -726,8 +725,8 @@ interface is the generic block's clauses with its types for the
 parameters, then its own block's. `trait generic_traits::Scale<T> { fn
 scale(&self, x: T) -> T { ensures result != x; } }` binds every instance,
 and `trait generic_traits::Scale<i32>` adds `requires 0 <= x and x <= 1000;
-ensures x < result;` at `i32`. An implementation inherits and refines its instance's interface, labeled
-`interface_ensures_0` onward in that order, and a call through `S:
+ensures x < result;` at `i32`. An implementation inherits and refines its
+instance's interface in its `.contract` proof, and a call through `S:
 generic_traits::Scale<i32>` or `&dyn generic_traits::Scale<i32>` assumes
 it. The generic block is also checked once for every type, whether or not
 the import uses an instance: its interface, `generic_traits::Scale<T>::scale`,
