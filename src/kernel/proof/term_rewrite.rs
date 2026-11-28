@@ -4154,9 +4154,7 @@ impl<'a> TermRewrite<'a> {
                 {
                     return proposition.clone();
                 }
-                if self.condition_exact.is_none()
-                    && let Some(pair) = condition.pointer_equality()
-                {
+                if let Some(pair) = condition.pointer_equality() {
                     if !self.begin_stored_condition_visit(condition) {
                         return exhausted_proposition();
                     }
@@ -4177,6 +4175,12 @@ impl<'a> TermRewrite<'a> {
                             StoredConditionTerm::constant(decided),
                             *value,
                         );
+                    }
+                    if let Some((from, to)) = self.condition_exact
+                        && pair.matches_condition(from)
+                    {
+                        self.changed = true;
+                        return to.truth_claim(*value);
                     }
                     let root = match pair {
                         PointerEquality::Pointer([left, right]) => {

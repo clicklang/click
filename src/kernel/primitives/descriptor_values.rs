@@ -407,25 +407,29 @@ impl<'a> WrittenPointerEquality<'a> {
             _ => None,
         }
     }
+    fn identity(self) -> ConditionIdentity<'a> {
+        match self {
+            Self::Address([a, b]) => ConditionIdentity::AddressEqual(a, b),
+            Self::Offset([a, b]) => ConditionIdentity::AddressOffsetEqual(a, b),
+            Self::Pointer([a, b]) => ConditionIdentity::PointerEqual(a, b),
+        }
+    }
     pub(crate) fn cited_value(
         self,
         facts: &std::collections::HashMap<OldConditionTerm, bool>,
     ) -> Option<bool> {
-        fn lookup<'a, T>(
-            facts: &std::collections::HashMap<OldConditionTerm, bool>,
-            [a, b]: [&'a T; 2],
-            identity: impl Fn(&'a T, &'a T) -> ConditionIdentity<'a>,
-        ) -> Option<bool> {
+        let lookup = |pair: Self| {
             facts
-                .get(&identity(a, b) as &dyn BorrowedConditionKey)
-                .or_else(|| facts.get(&identity(b, a) as &dyn BorrowedConditionKey))
+                .get(&pair.identity() as &dyn BorrowedConditionKey)
                 .copied()
-        }
-        match self {
-            Self::Address(pair) => lookup(facts, pair, ConditionIdentity::AddressEqual),
-            Self::Offset(pair) => lookup(facts, pair, ConditionIdentity::AddressOffsetEqual),
-            Self::Pointer(pair) => lookup(facts, pair, ConditionIdentity::PointerEqual),
-        }
+        };
+        lookup(self).or_else(|| {
+            lookup(match self {
+                Self::Address([a, b]) => Self::Address([b, a]),
+                Self::Offset([a, b]) => Self::Offset([b, a]),
+                Self::Pointer([a, b]) => Self::Pointer([b, a]),
+            })
+        })
     }
 }
 
@@ -448,6 +452,10 @@ impl PointerEquality<'_> {
                 read(WrittenPointerEquality::Pointer(written.each_ref()))
             }
         }
+    }
+    pub(crate) fn matches_condition(&self, from: &OldConditionTerm) -> bool {
+        WrittenPointerEquality::from_condition(from)
+            .is_some_and(|from| self.with_written(|pair| pair.identity() == from.identity()))
     }
     pub(crate) fn is_reflexive(&self) -> bool {
         match self {
@@ -697,22 +705,10 @@ impl std::fmt::Debug for StoredConditionTerm {
 impl StoredConditionTerm {
     /// The same ordering and hash as the written condition. Address comparisons
     /// already hold the operands that the identity borrows.
-    fn atomic_identity(&self) -> ConditionIdentity<'_> {
-        match self.root().map(KernelTerm::node) {
-            Some(KernelTermNode::AddressEqual {
-                arguments: [left, right],
-                ..
-            }) => ConditionIdentity::AddressEqual(
-                left.written().expect("written address"),
-                right.written().expect("written address"),
-            ),
-            Some(KernelTermNode::AddressOffsetEqual {
-                arguments: [left, right],
-            }) => ConditionIdentity::AddressOffsetEqual(
-                AddressOffset::try_from_ref(left).expect("written offset"),
-                AddressOffset::try_from_ref(right).expect("written offset"),
-            ),
-            _ => self.old_form().identity(),
+    fn with_atomic_identity<R>(&self, read: impl FnOnce(ConditionIdentity<'_>) -> R) -> R {
+        match self.pointer_equality() {
+            Some(pair) => pair.with_written(|written| read(written.identity())),
+            None => read(self.old_form().identity()),
         }
     }
 
@@ -765,7 +761,8 @@ impl Ord for StoredConditionTerm {
             // BoolIf and BoolEqual follow all atomic conditions in OldConditionTerm.
             (Some(_), None) => Ordering::Greater,
             (None, Some(_)) => Ordering::Less,
-            (None, None) => self.atomic_identity().cmp(&other.atomic_identity()),
+            (None, None) => self
+                .with_atomic_identity(|left| other.with_atomic_identity(|right| left.cmp(&right))),
         }
     }
 }
@@ -774,7 +771,7 @@ impl std::hash::Hash for StoredConditionTerm {
         if let Some(key) = self.connective_key() {
             key.hash(state);
         } else {
-            self.atomic_identity().hash(state);
+            self.with_atomic_identity(|value| value.hash(state));
         }
     }
 }
